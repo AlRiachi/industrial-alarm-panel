@@ -1,0 +1,152 @@
+acknowledge_alarm:
+  name: Acknowledge alarm
+  description: Acknowledge a single alarm without shelving or disabling it.
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+    comment:
+      required: false
+      selector:
+        text:
+acknowledge_all:
+  name: Acknowledge all alarms
+  description: Acknowledge all visible alarms, optionally filtered by priority or area.
+  fields:
+    priority:
+      required: false
+      selector:
+        select:
+          options:
+            - critical
+            - high
+            - medium
+            - low
+            - info
+            - status
+    area:
+      required: false
+      selector:
+        text:
+    comment:
+      required: false
+      selector:
+        text:
+silence_horn:
+  name: Silence horn
+  description: Stop alarm sound without acknowledging active alarms.
+  fields:
+    duration_seconds:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 86400
+          mode: box
+unsilence_horn:
+  name: Unsilence horn
+  description: Re-enable horn output for currently audible alarms.
+shelve_alarm:
+  name: Shelve alarm
+  description: Temporarily suppress horn generation for a rule.
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+    duration_minutes:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 10080
+          mode: box
+    comment:
+      required: false
+      selector:
+        text:
+unshelve_alarm:
+  name: Unshelve alarm
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+disable_alarm:
+  name: Disable alarm
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+    comment:
+      required: false
+      selector:
+        text:
+enable_alarm:
+  name: Enable alarm
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+create_rule:
+  name: Create rule
+  fields:
+    rule:
+      required: true
+      selector:
+        object:
+update_rule:
+  name: Update rule
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+    changes:
+      required: true
+      selector:
+        object:
+delete_rule:
+  name: Delete rule
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+test_sound:
+  name: Test sound
+  fields:
+    priority:
+      required: false
+      default: critical
+      selector:
+        select:
+          options:
+            - critical
+            - high
+            - medium
+            - low
+            - info
+            - status
+export_history:
+  name: Export history
+  fields:
+    start_time:
+      required: false
+      selector:
+        text:
+    end_time:
+      required: false
+      selector:
+        text:
+    format:
+      required: false
+      default: csv
+      selector:
+        select:
+          options:
+            - csv
+            - json

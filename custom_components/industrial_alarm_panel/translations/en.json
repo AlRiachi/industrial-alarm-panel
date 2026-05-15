@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Industrial Alarm Panel",
+        "description": "Set up the DCS-style alarm annunciator.",
+        "data": {
+          "instance_name": "Instance name",
+          "enable_panel": "Enable sidebar panel",
+          "enable_browser_sound": "Enable browser sound",
+          "enable_media_player_sound": "Enable media player sound",
+          "history_retention_days": "Default history retention days",
+          "max_active_alarms": "Default max active alarms shown",
+          "max_history_rows": "Default max history rows shown"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Industrial Alarm Panel is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Industrial Alarm Panel options"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+*.egg-info/
+industrial_alarm_panel_history.db
+.coverage
+htmlcov/
+/dist/
+node_modules/
