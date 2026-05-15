@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Home Assistant Community
+    url: https://community.home-assistant.io/
+    about: Use the community forum for general Home Assistant setup and usage questions.
+  - name: HACS Documentation
+    url: https://www.hacs.xyz/docs/use/
+    about: Use HACS documentation for HACS installation and custom repository workflow questions.

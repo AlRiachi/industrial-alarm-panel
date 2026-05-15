@@ -1,3 +1,5 @@
+const ALARMS_UPDATED_EVENT = "industrial_alarm_panel_alarms_updated";
+
 class IndustrialAlarmPanel extends HTMLElement {
   constructor() {
     super();
@@ -11,10 +13,13 @@ class IndustrialAlarmPanel extends HTMLElement {
     this._priority = "all";
     this._audioEnabled = false;
     this._refreshing = false;
+    this._updatesSubscribed = false;
+    this._unsubscribeUpdates = undefined;
   }
 
   set hass(hass) {
     this._hass = hass;
+    this._subscribeUpdates();
     if (!this._rendered) {
       this._render();
       this._load();
@@ -30,15 +35,49 @@ class IndustrialAlarmPanel extends HTMLElement {
     this._render();
   }
 
+  set panel(panel) {
+    this._panel = panel;
+  }
+
   disconnectedCallback() {
     if (this._timer) {
       window.clearInterval(this._timer);
+    }
+    if (this._unsubscribeUpdates) {
+      Promise.resolve(this._unsubscribeUpdates)
+        .then((unsubscribe) => {
+          if (typeof unsubscribe === "function") unsubscribe();
+        })
+        .catch(() => undefined);
+      this._unsubscribeUpdates = undefined;
+      this._updatesSubscribed = false;
     }
   }
 
   async _callWS(payload) {
     if (!this._hass) return null;
     return this._hass.callWS(payload);
+  }
+
+  _subscribeUpdates() {
+    const connection = this._hass?.connection;
+    if (this._updatesSubscribed || !connection?.subscribeEvents) return;
+    this._updatesSubscribed = true;
+    try {
+      this._unsubscribeUpdates = connection.subscribeEvents(
+        (event) => this._handleAlarmUpdateEvent(event),
+        ALARMS_UPDATED_EVENT
+      );
+    } catch (_err) {
+      this._updatesSubscribed = false;
+      this._unsubscribeUpdates = undefined;
+    }
+  }
+
+  _handleAlarmUpdateEvent(event) {
+    const entryId = this._panel?.config?.entry_id;
+    if (entryId && event?.data?.entry_id && event.data.entry_id !== entryId) return;
+    this._load();
   }
 
   async _load() {
@@ -208,8 +247,9 @@ class IndustrialAlarmPanel extends HTMLElement {
 
   _alarmRow(alarm) {
     const flash = alarm.lifecycle_state === "ACTIVE_UNACK" || alarm.lifecycle_state === "CLEARED_UNACK";
+    const stateClass = `state-${String(alarm.lifecycle_state || "normal").toLowerCase().replace(/_/g, "-")}`;
     return `
-      <tr class="priority-${alarm.priority} ${flash ? "flash" : ""}">
+      <tr class="alarm-row priority-${alarm.priority} ${stateClass} ${flash ? "flash" : ""}">
         <td>${this._time(alarm.active_since || alarm.cleared_at)}</td>
         <td><span class="badge">${alarm.priority}</span></td>
         <td>${this._escape(alarm.area || "")}</td>
@@ -369,15 +409,22 @@ class IndustrialAlarmPanel extends HTMLElement {
       th { background: #202832; color: #b8c7d4; position: sticky; top: 0; z-index: 1; }
       td:nth-child(6), td:nth-child(11) { white-space: normal; min-width: 180px; }
       tr { border-left: 6px solid #4b5563; }
-      .priority-critical { border-left-color: #e31b23; }
-      .priority-high { border-left-color: #ff8c00; }
-      .priority-medium { border-left-color: #ffd400; }
-      .priority-low { border-left-color: #3f8cff; }
-      .priority-info { border-left-color: #8aa4b2; }
-      .priority-status { border-left-color: #54c6d6; }
+      .alarm-row { background: #11161b; color: #e6edf3; }
+      .alarm-row td { border-bottom-color: rgba(16, 19, 22, .35); }
+      .alarm-row button { background: rgba(16, 19, 22, .22); color: inherit; border-color: rgba(16, 19, 22, .4); }
+      .alarm-row button:hover { background: rgba(16, 19, 22, .34); }
+      .alarm-row.priority-critical.state-active-unack { background: #ef2b1d; color: #101316; border-left-color: #8f1711; }
+      .alarm-row.priority-high.state-active-unack { background: #ff9f00; color: #101316; border-left-color: #a85b00; }
+      .alarm-row.priority-medium.state-active-unack { background: #ffd800; color: #101316; border-left-color: #b69100; }
+      .alarm-row.priority-low.state-active-unack { background: #58a6ff; color: #101316; border-left-color: #1d5fa8; }
+      .alarm-row.priority-info.state-active-unack { background: #83d2e6; color: #101316; border-left-color: #34899f; }
+      .alarm-row.priority-status.state-active-unack { background: #7ee787; color: #101316; border-left-color: #2f8a39; }
+      .alarm-row.state-cleared-unack { background: #d85b9d; color: #101316; border-left-color: #8e2f63; }
+      .alarm-row.state-active-ack, .alarm-row.state-cleared-ack { background: #f3f4f6; color: #1f2933; border-left-color: #9ca3af; }
+      .alarm-row.state-shelved, .alarm-row.state-disabled, .alarm-row.state-normal { background: #252c33; color: #aebdcc; border-left-color: #596675; }
       .badge { text-transform: uppercase; font-size: 12px; font-weight: 700; }
       .flash { animation: flashRow 1s step-end infinite; }
-      @keyframes flashRow { 50% { background: rgba(255,255,255,.16); } }
+      @keyframes flashRow { 50% { filter: brightness(1.25); } }
       .empty, .error { color: #9fb1c1; padding: 18px; }
       .error { margin: 12px 18px; color: #ffd5d5; background: #5b1c1c; border: 1px solid #a83737; }
       .rules, .settings { padding: 12px 18px 18px; }

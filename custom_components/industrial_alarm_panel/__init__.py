@@ -42,6 +42,7 @@ class IndustrialAlarmPanelRuntime:
     sound_manager: AlarmSoundManager
     engine: AlarmEngine
     remove_state_listener: Any | None = None
+    remove_frontend_update_listener: Any | None = None
     remove_panel: Any | None = None
 
 
@@ -57,6 +58,7 @@ async def async_setup_entry(
     from homeassistant.helpers.event import async_track_state_change_event
 
     from .alarm_panel import async_register_panel
+    from .frontend_events import attach_alarm_update_event_listener
     from .services import async_setup_services
     from .websocket_api import async_register_websocket_api
 
@@ -122,6 +124,9 @@ async def async_setup_entry(
     )
     entry.runtime_data = runtime
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
+    runtime.remove_frontend_update_listener = attach_alarm_update_event_listener(
+        hass, entry.entry_id, engine
+    )
 
     tracked_entities = sorted(
         {rule.entity_id for rule in engine.rules.values() if rule.entity_id}
@@ -161,6 +166,8 @@ async def async_unload_entry(
     if unload_ok:
         if runtime.remove_state_listener:
             runtime.remove_state_listener()
+        if runtime.remove_frontend_update_listener:
+            runtime.remove_frontend_update_listener()
         if runtime.remove_panel:
             try:
                 runtime.remove_panel()

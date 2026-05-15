@@ -44,6 +44,28 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
 
         self.assertIn("?v={VERSION}", source)
 
+    def test_frontend_subscribes_to_alarm_update_events(self) -> None:
+        source = Path(
+            "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
+        ).read_text()
+
+        self.assertIn("subscribeEvents", source)
+        self.assertIn("industrial_alarm_panel_alarms_updated", source)
+        self.assertIn("_unsubscribeUpdates", source)
+
+    def test_frontend_uses_full_row_alarm_colors_and_neutral_acknowledged_rows(
+        self,
+    ) -> None:
+        source = Path(
+            "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
+        ).read_text()
+
+        self.assertIn("alarm-row", source)
+        self.assertIn("state-active-unack", source)
+        self.assertIn("state-active-ack", source)
+        self.assertIn("background: #f3f4f6", source)
+        self.assertIn(".alarm-row.priority-critical.state-active-unack", source)
+
 
 if __name__ == "__main__":
     unittest.main()

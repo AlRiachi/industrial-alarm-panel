@@ -1,0 +1,82 @@
+name: Bug report
+description: Report a reproducible problem in Industrial Alarm Panel.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill this out with enough detail to reproduce the issue.
+  - type: input
+    id: integration_version
+    attributes:
+      label: Industrial Alarm Panel version
+      description: Find this in HACS or the integration manifest.
+      placeholder: v1.0.6
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: 2026.5.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation method
+      options:
+        - HACS custom repository
+        - Manual custom_components copy
+        - Development checkout
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Sidebar panel
+        - Services
+        - Rule creation
+        - Alarm lifecycle
+        - Sound
+        - HACS/install/update
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: rule_yaml
+    attributes:
+      label: Rule or service data
+      description: Paste the rule YAML/service data if this is rule-related.
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste Home Assistant log lines that include `industrial_alarm_panel`.
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Add screenshots for panel or layout issues.

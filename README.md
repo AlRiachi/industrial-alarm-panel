@@ -1,12 +1,33 @@
 # Industrial Alarm Panel
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://www.hacs.xyz/)
+[![GitHub release](https://img.shields.io/github/v/release/AlRiachi/industrial-alarm-panel?display_name=tag)](https://github.com/AlRiachi/industrial-alarm-panel/releases)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.1%2B-41BDF5.svg)](https://www.home-assistant.io/)
+[![License](https://img.shields.io/github/license/AlRiachi/industrial-alarm-panel)](LICENSE)
+
 Industrial Alarm Panel is a Home Assistant custom integration that provides a DCS-style alarm annunciator for industrial, energy, and equipment monitoring.
 
 It creates Home Assistant entities, exposes services and a websocket API, persists alarm rules and runtime state, stores alarm history in SQLite, and serves a dedicated sidebar panel at `/industrial-alarms`.
 
-Current release: `v1.0.5`
+Current release: `v1.0.6`
+
+![Industrial Alarm Panel preview](docs/images/industrial-alarm-panel-preview.png)
+
+## Highlights
+
+- Dedicated Home Assistant sidebar panel at `/industrial-alarms`
+- DCS-style alarm lifecycle: active, acknowledged, cleared, shelved, disabled
+- Priority levels with horn behavior: `critical`, `high`, `medium`, `low`, `info`, `status`
+- Per-rule binary sensors and operator action buttons
+- Rule storage, runtime state persistence, and SQLite alarm history
+- Browser horn and optional media-player sound output
+- HACS-ready repository layout with local Home Assistant brand images
 
 ## Installation
+
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=AlRiachi&repository=industrial-alarm-panel&category=integration)
+
+### HACS
 
 1. Add this repository as a HACS custom repository with category `Integration`:
 
@@ -18,34 +39,69 @@ Current release: `v1.0.5`
 3. Restart Home Assistant.
 4. Go to **Settings > Devices & services > Add integration** and search for **Industrial Alarm Panel**.
 
-The repository follows HACS integration layout rules: all runtime files are under `custom_components/industrial_alarm_panel`, with a root `hacs.json` and one integration directory under `custom_components`.
+After upgrading through HACS, restart Home Assistant again. If the sidebar panel was already open, hard refresh the browser with `Ctrl+Shift+R`.
+
+The repository follows HACS integration layout rules: all runtime files are under `custom_components/industrial_alarm_panel`, with a root `hacs.json`, GitHub releases, and one integration directory under `custom_components`.
 
 See [INSTALLATION.md](INSTALLATION.md) for manual installation, media-player sound setup, and a test rule.
+
+## Brand Assets
+
+This repository includes local Home Assistant brand assets in `custom_components/industrial_alarm_panel/brand/`:
+
+- `icon.png` and `dark_icon.png`
+- `logo.png` and `dark_logo.png`
+
+Home Assistant 2026.3 and newer can serve local brand assets for custom integrations. Older Home Assistant versions still run the integration, but may not show the local icon/logo in all UI surfaces.
 
 ## Entities
 
 Global entities include:
 
-- `sensor.industrial_alarm_active_count`
-- `sensor.industrial_alarm_unacknowledged_count`
-- `sensor.industrial_alarm_critical_count`
-- `sensor.industrial_alarm_high_count`
-- `sensor.industrial_alarm_last_alarm`
-- `sensor.industrial_alarm_last_event`
-- `binary_sensor.industrial_alarm_any_active`
-- `binary_sensor.industrial_alarm_any_unacknowledged`
-- `binary_sensor.industrial_alarm_horn_active`
-- `switch.industrial_alarm_sound_enabled`
-- `button.industrial_alarm_acknowledge_all`
-- `button.industrial_alarm_silence_horn`
-- `button.industrial_alarm_unsilence_horn`
-- `button.industrial_alarm_test_sound`
-- `select.industrial_alarm_filter_priority`
-- `number.industrial_alarm_history_retention_days`
+- `sensor.industrial_alarm_panel_active_count`
+- `sensor.industrial_alarm_panel_unacknowledged_count`
+- `sensor.industrial_alarm_panel_critical_count`
+- `sensor.industrial_alarm_panel_high_count`
+- `sensor.industrial_alarm_panel_last_alarm`
+- `sensor.industrial_alarm_panel_last_event`
+- `binary_sensor.industrial_alarm_panel_any_active`
+- `binary_sensor.industrial_alarm_panel_any_unacknowledged`
+- `binary_sensor.industrial_alarm_panel_horn_active`
+- `switch.industrial_alarm_panel_sound_enabled`
+- `button.industrial_alarm_panel_acknowledge_all`
+- `button.industrial_alarm_panel_silence_horn`
+- `button.industrial_alarm_panel_unsilence_horn`
+- `button.industrial_alarm_panel_test_sound`
+- `select.industrial_alarm_panel_filter_priority`
+- `number.industrial_alarm_panel_history_retention_days`
 
 Every stored rule also gets a binary alarm sensor and action buttons after the integration reloads.
 
-## Rule Example
+## Rule Creation
+
+Create and manage rules from **Developer Tools > Services**, automations, scripts, or the panel's rule editor.
+
+Rules use stable Home Assistant `entity_id` values. For numeric range alarms, create two rules: one `below` rule and one `above` rule.
+
+### Rule Fields
+
+Common fields:
+
+- `id`: stable rule ID. Keep it lowercase and unique.
+- `entity_id`: source entity to monitor.
+- `name`: operator-facing alarm name.
+- `tag`: short DCS-style tag.
+- `area`: room, plant area, or system area.
+- `system`: equipment group, such as `SOFAR Inverter`, `Grid`, or `Electric Heater`.
+- `condition`: one of `above`, `below`, `equal`, `not_equal`, `contains`, `is_on`, `is_off`, `state_changed`, `unavailable`, `unavailable_for`, `unknown_for`, `manual`.
+- `threshold`: numeric value for `above` and `below`, or expected text for text conditions.
+- `deadband`: hysteresis for numeric alarms.
+- `priority`: `critical`, `high`, `medium`, `low`, `info`, or `status`.
+- `instructions`: short operator guidance shown in the panel.
+
+Optional fields include `requires_ack`, `audible`, `delay_on_seconds`, `delay_off_seconds`, `show_when_cleared`, and `shelving_allowed`.
+
+### High Temperature Rule
 
 Create a rule from Developer Tools > Services:
 
@@ -70,7 +126,72 @@ data:
     instructions: Check inverter ventilation, fans, ambient temperature, and loading.
 ```
 
-Supported conditions are `above`, `below`, `equal`, `not_equal`, `contains`, `is_on`, `is_off`, `state_changed`, `unavailable`, `unavailable_for`, `unknown_for`, and `manual`.
+### Voltage Range Rules
+
+```yaml
+service: industrial_alarm_panel.create_rule
+data:
+  rule:
+    id: grid_phase_a_voltage_low
+    entity_id: sensor.shellyem3_e8db84d68e3c_channel_a_voltage
+    name: Grid Phase A Voltage Low
+    tag: GRID-A-V-LOW
+    area: Electrical
+    system: Grid Meter
+    condition: below
+    threshold: 207
+    deadband: 3
+    priority: high
+    instructions: Check Phase A supply voltage and upstream breaker or utility condition.
+```
+
+```yaml
+service: industrial_alarm_panel.create_rule
+data:
+  rule:
+    id: grid_phase_a_voltage_high
+    entity_id: sensor.shellyem3_e8db84d68e3c_channel_a_voltage
+    name: Grid Phase A Voltage High
+    tag: GRID-A-V-HIGH
+    area: Electrical
+    system: Grid Meter
+    condition: above
+    threshold: 253
+    deadband: 3
+    priority: high
+    instructions: Check Phase A supply voltage and utility condition.
+```
+
+### Binary Problem Rule
+
+```yaml
+service: industrial_alarm_panel.create_rule
+data:
+  rule:
+    id: electric_heater_overheating
+    entity_id: binary_sensor.shellyplus1pm_c4d8d55505a0_switch_0_overheating
+    name: Electric Heater Overheating
+    tag: EHEATER-OVERTEMP
+    area: Electrical
+    system: Electric Heater
+    condition: is_on
+    priority: critical
+    instructions: Turn off heater circuit if safe and inspect the load before re-enabling.
+```
+
+### Starter Alarm Ideas
+
+Good first rules usually monitor:
+
+- inverter native fault words, for example SOFAR fault registers `> 0`
+- grid voltage low/high, for example `< 207 V` and `> 253 V` on 230 V nominal systems
+- grid frequency low/high, for example `< 49.5 Hz` and `> 50.5 Hz`
+- inverter heatsink or cabinet temperature high
+- PV insulation resistance low
+- solar heater water temperature high
+- built-in problem binary sensors such as overheating, overcurrent, overpower, or overvoltage
+- Home Assistant host power problem sensors
+- internet connectivity loss if cloud/mobile notification delivery matters
 
 ## Services
 
@@ -107,6 +228,51 @@ Default filenames are `critical.mp3`, `high.mp3`, `medium.mp3`, `low.mp3`, and `
 Rules are stored in Home Assistant storage with key `industrial_alarm_panel.rules`.
 Runtime alarm states are stored with key `industrial_alarm_panel.state`.
 History is stored in `/config/industrial_alarm_panel_history.db`.
+
+## Troubleshooting
+
+- If `/industrial-alarms` is blank after an update, restart Home Assistant and hard refresh the browser with `Ctrl+Shift+R`.
+- If a newly created rule does not show as an entity yet, wait for the integration reload to finish or restart Home Assistant.
+- If the horn does not play in the browser, click **Enable Alarm Sound** in the panel. Browsers block audio until a user gesture.
+- If media-player sound does not play, confirm your MP3 files exist under `/config/www/industrial_alarm_panel/sounds/`.
+- Check **Settings > System > Logs** for `industrial_alarm_panel` errors.
+
+## Reporting Issues
+
+Before opening an issue:
+
+1. Update to the latest release.
+2. Restart Home Assistant.
+3. Reproduce the problem.
+4. Check Home Assistant logs for `industrial_alarm_panel`.
+
+Open a GitHub issue here:
+
+```text
+https://github.com/AlRiachi/industrial-alarm-panel/issues/new/choose
+```
+
+Please include:
+
+- Home Assistant version
+- Industrial Alarm Panel version
+- install method, usually HACS custom repository
+- browser and device if the issue is panel-related
+- exact rule YAML or service data if the issue is rule-related
+- relevant log lines and screenshots
+
+Security issues should not be reported in public issues. See [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+Pull requests are welcome. Keep changes focused, include tests for behavioral changes, and run:
+
+```bash
+python3 -m unittest discover -s tests -v
+node --check custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for repository workflow and support expectations.
 
 ## Development
 

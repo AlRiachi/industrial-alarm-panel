@@ -4,6 +4,8 @@ This repository is a HACS custom integration for Home Assistant.
 
 ## HACS Installation
 
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=AlRiachi&repository=industrial-alarm-panel&category=integration)
+
 1. Open Home Assistant.
 2. Go to **HACS > Integrations**.
 3. Open the menu in the top right and choose **Custom repositories**.
@@ -24,6 +26,8 @@ After setup, the sidebar panel is available at:
 ```text
 /industrial-alarms
 ```
+
+After every HACS update, restart Home Assistant. If the panel was already open in your browser, hard refresh it with `Ctrl+Shift+R`.
 
 ## Manual Installation
 
@@ -80,6 +84,8 @@ data:
     audible: true
     instructions: Check inverter ventilation and fans.
 ```
+
+For production rules, prefer stable `entity_id` references and create separate rules for high and low numeric limits. For example, grid voltage needs one `below` rule and one `above` rule.
 
 ## Development Requirements
 
