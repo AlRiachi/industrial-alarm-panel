@@ -108,6 +108,46 @@ class AlarmEngineTests(unittest.IsolatedAsyncioTestCase):
             AlarmLifecycleState.ACTIVE_UNACK,
         )
 
+    async def test_deleting_rule_does_not_notify_removed_per_alarm_entities(self) -> None:
+        rule = AlarmRule.from_dict(
+            {
+                "id": "delete_me",
+                "entity_id": "binary_sensor.delete_me",
+                "name": "Delete Me",
+                "condition": "is_on",
+                "priority": "low",
+            }
+        )
+        engine = AlarmEngine([rule], self.history, now=self.clock.now)
+        notifications = 0
+
+        def removed_entity_listener() -> None:
+            nonlocal notifications
+            notifications += 1
+            engine.get_alarm("delete_me")
+
+        engine.add_listener(removed_entity_listener)
+
+        await engine.delete_rule("delete_me")
+
+        self.assertNotIn("delete_me", engine.rules)
+        self.assertNotIn("delete_me", engine.states)
+        self.assertEqual(notifications, 0)
+
+    async def test_engine_can_notify_entities_after_external_sound_state_change(self) -> None:
+        engine = AlarmEngine([], self.history, now=self.clock.now)
+        notifications = 0
+
+        def listener() -> None:
+            nonlocal notifications
+            notifications += 1
+
+        engine.add_listener(listener)
+
+        engine.notify_listeners()
+
+        self.assertEqual(notifications, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

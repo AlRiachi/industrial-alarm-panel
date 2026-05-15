@@ -51,6 +51,11 @@ async def async_setup_entry(
 
     runtime = hass.data[DOMAIN][entry.entry_id]
     engine = runtime.engine
+
+    async def _test_sound() -> None:
+        await runtime.sound_manager.test_sound()
+        engine.notify_listeners()
+
     entities: list[ButtonEntity] = [
         AlarmActionButton(
             runtime,
@@ -74,7 +79,7 @@ async def async_setup_entry(
             runtime,
             "test_sound",
             "Test Sound",
-            runtime.sound_manager.test_sound,
+            _test_sound,
         ),
     ]
     for rule_id, rule in engine.rules.items():

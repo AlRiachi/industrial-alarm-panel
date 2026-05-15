@@ -160,6 +160,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             return
         if call.service == SERVICE_TEST_SOUND:
             await runtime.sound_manager.test_sound(AlarmPriority(data[PRIORITY]))
+            engine.notify_listeners()
             return
         if call.service == SERVICE_EXPORT_HISTORY:
             start = _parse_datetime(data.get(START_TIME))

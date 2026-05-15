@@ -106,6 +106,11 @@ class AlarmEngine:
         for listener in list(self._listeners):
             listener()
 
+    def notify_listeners(self) -> None:
+        """Notify Home Assistant entities after external runtime state changes."""
+
+        self._notify()
+
     async def _persist(self) -> None:
         if self._persist_states:
             await self._persist_states(self.states)
@@ -450,7 +455,6 @@ class AlarmEngine:
         self.states.pop(rule_id, None)
         await self._record_event(rule, AlarmEventType.RULE_DELETED)
         await self._persist()
-        self._notify()
 
     def active_count(self) -> int:
         """Return active alarm count."""
