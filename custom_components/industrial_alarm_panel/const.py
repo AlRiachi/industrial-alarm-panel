@@ -19,7 +19,7 @@ except ModuleNotFoundError:  # Allows pure unit tests without Home Assistant ins
 
 DOMAIN = "industrial_alarm_panel"
 NAME = "Industrial Alarm Panel"
-VERSION = "1.0.0"
+VERSION = "1.0.5"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -38,7 +38,7 @@ STATE_STORAGE_VERSION = 1
 PANEL_URL = "industrial-alarms"
 PANEL_TITLE = "Industrial Alarms"
 PANEL_ICON = "mdi:alarm-light"
-FRONTEND_MODULE = f"/{DOMAIN}/frontend/dist/industrial-alarm-panel.js"
+FRONTEND_MODULE = f"/{DOMAIN}/frontend/dist/industrial-alarm-panel.js?v={VERSION}"
 
 SERVICE_ACKNOWLEDGE_ALARM = "acknowledge_alarm"
 SERVICE_ACKNOWLEDGE_ALL = "acknowledge_all"

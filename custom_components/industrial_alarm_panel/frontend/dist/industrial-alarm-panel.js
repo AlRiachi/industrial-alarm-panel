@@ -395,4 +395,6 @@ class IndustrialAlarmPanel extends HTMLElement {
   }
 }
 
-customElements.define("industrial-alarm-panel", IndustrialAlarmPanel);
+if (!customElements.get("industrial-alarm-panel")) {
+  customElements.define("industrial-alarm-panel", IndustrialAlarmPanel);
+}

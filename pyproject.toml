@@ -1,6 +1,6 @@
 [project]
 name = "industrial-alarm-panel"
-version = "1.0.4"
+version = "1.0.5"
 description = "DCS-style alarm annunciator custom integration for Home Assistant"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -8,4 +8,5 @@ import "./components/alarm-config";
 import "./components/alarm-sound-test";
 
 // Home Assistant custom panels instantiate the element named by panel_custom.name.
-// The bundled dist file registers "industrial-alarm-panel".
+// The bundled dist file registers "industrial-alarm-panel" with a guard so a
+// cache-busted module URL can be imported without duplicate custom-element errors.

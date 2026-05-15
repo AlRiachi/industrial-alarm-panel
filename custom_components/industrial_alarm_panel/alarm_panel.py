@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.components import frontend
+from homeassistant.components import panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -38,30 +39,24 @@ async def async_register_panel(hass: HomeAssistant, entry: ConfigEntry) -> Any |
             StaticPathConfig(
                 f"/{DOMAIN}/frontend/dist",
                 str(dist_path),
-                cache_headers=True,
+                cache_headers=False,
             )
         ]
     )
 
-    config = {
-        "_panel_custom": {
-            "name": "industrial-alarm-panel",
-            "module_url": FRONTEND_MODULE,
-            "embed_iframe": False,
-            "trust_external_script": False,
-            "config": {
-                "entry_id": entry.entry_id,
-                "title": options.get(CONF_PANEL_TITLE, PANEL_TITLE),
-            },
-        }
-    }
-    frontend.async_register_built_in_panel(
+    await panel_custom.async_register_panel(
         hass,
-        component_name="custom",
+        frontend_url_path=PANEL_URL,
+        webcomponent_name="industrial-alarm-panel",
         sidebar_title=options.get(CONF_PANEL_TITLE, PANEL_TITLE),
         sidebar_icon=PANEL_ICON,
-        frontend_url_path=PANEL_URL,
-        config=config,
+        module_url=FRONTEND_MODULE,
+        embed_iframe=False,
+        trust_external=False,
+        config={
+            "entry_id": entry.entry_id,
+            "title": options.get(CONF_PANEL_TITLE, PANEL_TITLE),
+        },
         require_admin=False,
     )
 
