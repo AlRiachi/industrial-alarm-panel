@@ -9,7 +9,7 @@ Industrial Alarm Panel is a Home Assistant custom integration that provides a DC
 
 It creates Home Assistant entities, exposes services and a websocket API, persists alarm rules and runtime state, stores alarm history in SQLite, and serves a dedicated sidebar panel at `/industrial-alarms`.
 
-Current release: `v1.0.6`
+Current release: `v1.0.7`
 
 ![Industrial Alarm Panel preview](docs/images/industrial-alarm-panel-preview.png)
 

@@ -1,6 +1,5 @@
 {
   "name": "Industrial Alarm Panel",
   "render_readme": true,
-  "domains": ["sensor", "binary_sensor", "button", "switch", "select", "number"],
   "homeassistant": "2025.1.0"
 }
