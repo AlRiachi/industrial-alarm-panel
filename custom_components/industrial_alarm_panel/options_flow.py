@@ -52,6 +52,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Manage integration options."""
 
         if user_input is not None:
+            media_players = user_input.get(CONF_MEDIA_PLAYERS)
+            if isinstance(media_players, str):
+                user_input[CONF_MEDIA_PLAYERS] = [
+                    item.strip() for item in media_players.split(",") if item.strip()
+                ]
             return self.async_create_entry(title="", data=user_input)
 
         options = {**DEFAULT_OPTIONS, **self._config_entry.data, **self._config_entry.options}
@@ -97,8 +102,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     ): vol.In(SOUND_MODES),
                     vol.Optional(
                         CONF_MEDIA_PLAYERS,
-                        default=options[CONF_MEDIA_PLAYERS],
-                    ): vol.All(vol.EnsureList(str)),
+                        default=",".join(options[CONF_MEDIA_PLAYERS]),
+                    ): str,
                     vol.Optional(
                         CONF_REPEAT_UNTIL_SILENCED,
                         default=options[CONF_REPEAT_UNTIL_SILENCED],
