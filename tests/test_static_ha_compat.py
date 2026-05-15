@@ -66,6 +66,42 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
         self.assertIn("background: #f3f4f6", source)
         self.assertIn(".alarm-row.priority-critical.state-active-unack", source)
 
+    def test_frontend_can_create_suggested_alarm_rules(self) -> None:
+        source = Path(
+            "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
+        ).read_text()
+
+        self.assertIn("Suggested Rules", source)
+        self.assertIn("create_suggested_rules", source)
+        self.assertIn("High W", source)
+        self.assertIn("Low V", source)
+        self.assertIn("Solar C", source)
+
+    def test_frontend_preserves_rule_forms_while_refreshing(self) -> None:
+        source = Path(
+            "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
+        ).read_text()
+
+        self.assertIn("_ruleDraft", source)
+        self.assertIn("_suggestionDraft", source)
+        self.assertIn("_isEditingRulesForm", source)
+        self.assertIn("if (!this._isEditingRulesForm()) this._render();", source)
+
+    def test_frontend_version_is_bumped_for_suggested_rule_ui(self) -> None:
+        const_source = Path("custom_components/industrial_alarm_panel/const.py").read_text()
+        manifest_source = Path(
+            "custom_components/industrial_alarm_panel/manifest.json"
+        ).read_text()
+
+        self.assertIn('VERSION = "1.0.8"', const_source)
+        self.assertIn('"version": "1.0.8"', manifest_source)
+
+    def test_websocket_registers_suggested_rule_command(self) -> None:
+        source = Path("custom_components/industrial_alarm_panel/websocket_api.py").read_text()
+
+        self.assertIn("websocket_create_suggested_rules", source)
+        self.assertIn("suggest_alarm_rules", source)
+
 
 if __name__ == "__main__":
     unittest.main()

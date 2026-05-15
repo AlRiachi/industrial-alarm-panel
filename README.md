@@ -9,7 +9,7 @@ Industrial Alarm Panel is a Home Assistant custom integration that provides a DC
 
 It creates Home Assistant entities, exposes services and a websocket API, persists alarm rules and runtime state, stores alarm history in SQLite, and serves a dedicated sidebar panel at `/industrial-alarms`.
 
-Current release: `v1.0.7`
+Current release: `v1.0.8`
 
 ![Industrial Alarm Panel preview](docs/images/industrial-alarm-panel-preview.png)
 
@@ -21,7 +21,18 @@ Current release: `v1.0.7`
 - Per-rule binary sensors and operator action buttons
 - Rule storage, runtime state persistence, and SQLite alarm history
 - Browser horn and optional media-player sound output
+- Suggested alarm rule generator for PowerTag/electrical/solar-water sensors
+- Event-driven panel refresh with a polling fallback
 - HACS-ready repository layout with local Home Assistant brand images
+
+## What's New in v1.0.8
+
+- Added **Suggested Rules** in the panel Rules tab.
+- Suggested rules can create high-consumption, low-voltage, high-voltage, high solar-water temperature, and unavailable-sensor alarms.
+- Added full-row DCS-style alarm colors, with acknowledged alarms shown in neutral gray.
+- Added event-driven alarm refresh so new alarms appear faster than the polling fallback.
+- Fixed Rules tab form inputs being cleared by automatic refresh while an operator is typing.
+- Bumped the frontend cache-busting version to force Home Assistant browsers to load the new panel bundle.
 
 ## Installation
 
@@ -82,6 +93,19 @@ Every stored rule also gets a binary alarm sensor and action buttons after the i
 Create and manage rules from **Developer Tools > Services**, automations, scripts, or the panel's rule editor.
 
 Rules use stable Home Assistant `entity_id` values. For numeric range alarms, create two rules: one `below` rule and one `above` rule.
+
+### Suggested Rules
+
+Open **Industrial Alarms > Rules > Suggested Rules** and click **Create Suggested Rules** to scan current Home Assistant `sensor.*` entities and create common rules automatically.
+
+Default suggested thresholds:
+
+- `High W`: `2000 W` for power/high-consumption sensors
+- `Low V`: `207 V`
+- `High V`: `253 V`
+- `Solar C`: `75 C` for solar water/tank/boiler temperature sensors
+
+The generator detects candidates from `device_class`, unit of measurement, entity ID, and friendly name. It skips generated rule IDs that already exist so repeated clicks do not duplicate rules.
 
 ### Rule Fields
 

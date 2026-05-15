@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 
 from .alarm_models import AlarmPriority
 from .const import DOMAIN
+from .rule_suggestions import suggest_alarm_rules
 
 
 def async_register_websocket_api(hass: HomeAssistant) -> None:
@@ -24,6 +25,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_list_history)
     websocket_api.async_register_command(hass, websocket_list_rules)
     websocket_api.async_register_command(hass, websocket_create_rule)
+    websocket_api.async_register_command(hass, websocket_create_suggested_rules)
     websocket_api.async_register_command(hass, websocket_update_rule)
     websocket_api.async_register_command(hass, websocket_delete_rule)
     websocket_api.async_register_command(hass, websocket_acknowledge)
@@ -130,6 +132,59 @@ async def websocket_create_rule(
     await runtime.rule_store.async_save_rules(runtime.engine.rules.values())
     hass.async_create_task(hass.config_entries.async_reload(runtime.entry_id))
     connection.send_result(msg["id"], {"rule": rule.to_dict()})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "industrial_alarm_panel/create_suggested_rules",
+        vol.Optional("power_threshold_w", default=2000): vol.All(
+            vol.Coerce(float), vol.Range(min=1)
+        ),
+        vol.Optional("low_voltage_v", default=207): vol.All(
+            vol.Coerce(float), vol.Range(min=1)
+        ),
+        vol.Optional("high_voltage_v", default=253): vol.All(
+            vol.Coerce(float), vol.Range(min=1)
+        ),
+        vol.Optional("high_solar_water_temp_c", default=75): vol.All(
+            vol.Coerce(float), vol.Range(min=1)
+        ),
+    }
+)
+@websocket_api.async_response
+async def websocket_create_suggested_rules(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Create suggested alarm rules from current Home Assistant sensors."""
+
+    runtime = _runtime(hass)
+    suggested = suggest_alarm_rules(
+        _sensor_states(hass),
+        existing_rule_ids=set(runtime.engine.rules),
+        power_threshold_w=msg["power_threshold_w"],
+        low_voltage_v=msg["low_voltage_v"],
+        high_voltage_v=msg["high_voltage_v"],
+        high_solar_water_temp_c=msg["high_solar_water_temp_c"],
+    )
+
+    created = []
+    for rule_data in suggested:
+        rule = await runtime.engine.create_rule(rule_data)
+        created.append(rule.to_dict())
+
+    if created:
+        await runtime.rule_store.async_save_rules(runtime.engine.rules.values())
+        hass.async_create_task(hass.config_entries.async_reload(runtime.entry_id))
+
+    connection.send_result(
+        msg["id"],
+        {
+            "created_count": len(created),
+            "created": created,
+        },
+    )
 
 
 @websocket_api.websocket_command(
@@ -317,3 +372,26 @@ def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
     return datetime.fromisoformat(value)
+
+
+def _sensor_states(hass: HomeAssistant) -> list[Any]:
+    async_all = getattr(hass.states, "async_all", None)
+    if async_all:
+        try:
+            states = async_all("sensor")
+        except TypeError:
+            states = [
+                state
+                for state in async_all()
+                if str(getattr(state, "entity_id", "")).startswith("sensor.")
+            ]
+        return list(states)
+
+    async_entity_ids = getattr(hass.states, "async_entity_ids", None)
+    if async_entity_ids:
+        return [
+            state
+            for entity_id in async_entity_ids("sensor")
+            if (state := hass.states.get(entity_id)) is not None
+        ]
+    return []

@@ -7,6 +7,21 @@ class IndustrialAlarmPanel extends HTMLElement {
     this._alarms = [];
     this._history = [];
     this._rules = [];
+    this._ruleDraft = {
+      id: "",
+      entity_id: "",
+      name: "",
+      condition: "above",
+      threshold: "",
+      priority: "medium",
+    };
+    this._suggestionDraft = {
+      power_threshold_w: 2000,
+      low_voltage_v: 207,
+      high_voltage_v: 253,
+      high_solar_water_temp_c: 75,
+    };
+    this._suggestedRulesResult = null;
     this._sound = {};
     this._tab = "active";
     this._search = "";
@@ -91,10 +106,10 @@ class IndustrialAlarmPanel extends HTMLElement {
       this._sound = alarms?.sound || {};
       this._history = history?.events || [];
       this._rules = rules?.rules || [];
-      this._render();
+      if (!this._isEditingRulesForm()) this._render();
     } catch (err) {
       this._error = err.message || String(err);
-      this._render();
+      if (!this._isEditingRulesForm()) this._render();
     } finally {
       this._refreshing = false;
     }
@@ -290,18 +305,31 @@ class IndustrialAlarmPanel extends HTMLElement {
   }
 
   _rulesView() {
+    const ruleDraft = this._ruleDraft;
+    const suggestionDraft = this._suggestionDraft;
     return `
       <section class="rules">
+        <div class="suggested-rules">
+          <h2>Suggested Rules</h2>
+          <div class="suggested-rules-controls">
+            <label>High W <input type="number" min="1" step="50" value="${this._escape(suggestionDraft.power_threshold_w)}" data-suggest="power_threshold_w"></label>
+            <label>Low V <input type="number" min="1" step="1" value="${this._escape(suggestionDraft.low_voltage_v)}" data-suggest="low_voltage_v"></label>
+            <label>High V <input type="number" min="1" step="1" value="${this._escape(suggestionDraft.high_voltage_v)}" data-suggest="high_voltage_v"></label>
+            <label>Solar C <input type="number" min="1" step="1" value="${this._escape(suggestionDraft.high_solar_water_temp_c)}" data-suggest="high_solar_water_temp_c"></label>
+            <button class="primary" data-action="create-suggested-rules">Create Suggested Rules</button>
+          </div>
+          ${this._suggestedRulesResult ? `<div class="notice">${this._escape(this._suggestedRulesResult)}</div>` : ""}
+        </div>
         <div class="rule-form">
-          <input placeholder="Rule id" data-new="id">
-          <input placeholder="Entity id" data-new="entity_id">
-          <input placeholder="Name" data-new="name">
+          <input placeholder="Rule id" value="${this._escape(ruleDraft.id)}" data-new="id">
+          <input placeholder="Entity id" value="${this._escape(ruleDraft.entity_id)}" data-new="entity_id">
+          <input placeholder="Name" value="${this._escape(ruleDraft.name)}" data-new="name">
           <select data-new="condition">
-            ${["above", "below", "equal", "not_equal", "contains", "is_on", "is_off", "state_changed", "unavailable", "unavailable_for", "unknown_for", "manual"].map((c) => `<option>${c}</option>`).join("")}
+            ${["above", "below", "equal", "not_equal", "contains", "is_on", "is_off", "state_changed", "unavailable", "unavailable_for", "unknown_for", "manual"].map((c) => `<option value="${c}" ${ruleDraft.condition === c ? "selected" : ""}>${c}</option>`).join("")}
           </select>
-          <input placeholder="Threshold" data-new="threshold">
+          <input placeholder="Threshold" value="${this._escape(ruleDraft.threshold)}" data-new="threshold">
           <select data-new="priority">
-            ${["critical", "high", "medium", "low", "info", "status"].map((p) => `<option>${p}</option>`).join("")}
+            ${["critical", "high", "medium", "low", "info", "status"].map((p) => `<option value="${p}" ${ruleDraft.priority === p ? "selected" : ""}>${p}</option>`).join("")}
           </select>
           <button class="primary" data-action="create-rule">Add Rule</button>
         </div>
@@ -342,6 +370,21 @@ class IndustrialAlarmPanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-action='enable-audio']")?.addEventListener("click", () => this._testSound());
     this.shadowRoot.querySelector("[data-action='test-sound']")?.addEventListener("click", () => this._testSound());
     this.shadowRoot.querySelector("[data-action='create-rule']")?.addEventListener("click", () => this._createRule());
+    this.shadowRoot.querySelector("[data-action='create-suggested-rules']")?.addEventListener("click", () => this._createSuggestedRules());
+    this.shadowRoot.querySelectorAll("[data-new]").forEach((field) => {
+      const updateDraft = () => {
+        this._ruleDraft[field.dataset.new] = field.value;
+      };
+      field.addEventListener("input", updateDraft);
+      field.addEventListener("change", updateDraft);
+    });
+    this.shadowRoot.querySelectorAll("[data-suggest]").forEach((field) => {
+      const updateDraft = () => {
+        this._suggestionDraft[field.dataset.suggest] = field.value;
+      };
+      field.addEventListener("input", updateDraft);
+      field.addEventListener("change", updateDraft);
+    });
     this.shadowRoot.querySelector("[data-field='search']")?.addEventListener("input", (event) => {
       this._search = event.target.value;
       this._render();
@@ -355,13 +398,43 @@ class IndustrialAlarmPanel extends HTMLElement {
   }
 
   async _createRule() {
-    const fields = {};
-    this.shadowRoot.querySelectorAll("[data-new]").forEach((field) => {
-      if (field.value !== "") fields[field.dataset.new] = field.value;
+    const fields = { ...this._ruleDraft };
+    Object.keys(fields).forEach((key) => {
+      if (fields[key] === "") delete fields[key];
     });
     if (fields.threshold !== undefined && fields.threshold !== "") fields.threshold = Number(fields.threshold);
     await this._callWS({ type: "industrial_alarm_panel/create_rule", rule: fields });
+    this._ruleDraft = {
+      id: "",
+      entity_id: "",
+      name: "",
+      condition: "above",
+      threshold: "",
+      priority: "medium",
+    };
     await this._load();
+  }
+
+  async _createSuggestedRules() {
+    const fields = {};
+    Object.entries(this._suggestionDraft).forEach(([key, value]) => {
+      if (value !== "") fields[key] = Number(value);
+    });
+    const result = await this._callWS({
+      type: "industrial_alarm_panel/create_suggested_rules",
+      ...fields,
+    });
+    const count = result?.created_count || 0;
+    this._suggestedRulesResult = count
+      ? `Created ${count} suggested alarm rules`
+      : "No new suggested alarm rules";
+    await this._load();
+  }
+
+  _isEditingRulesForm() {
+    const active = this.shadowRoot?.activeElement;
+    if (this._tab !== "rules" || !active) return false;
+    return Boolean(active.matches("[data-new], [data-suggest]"));
   }
 
   _time(value) {
@@ -428,6 +501,12 @@ class IndustrialAlarmPanel extends HTMLElement {
       .empty, .error { color: #9fb1c1; padding: 18px; }
       .error { margin: 12px 18px; color: #ffd5d5; background: #5b1c1c; border: 1px solid #a83737; }
       .rules, .settings { padding: 12px 18px 18px; }
+      .suggested-rules { margin-bottom: 12px; padding: 10px; border: 1px solid #2e3944; background: #151b21; }
+      .suggested-rules h2 { margin: 0 0 8px; font-size: 15px; font-weight: 700; letter-spacing: 0; color: #e6edf3; }
+      .suggested-rules-controls { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+      .suggested-rules label { display: grid; gap: 4px; color: #b8c7d4; font-size: 12px; }
+      .suggested-rules input { min-width: 90px; width: 110px; }
+      .notice { margin-top: 8px; color: #dbeafe; font-size: 13px; }
       .rule-form { margin-bottom: 12px; }
       .settings dl { display: grid; grid-template-columns: max-content minmax(120px, 1fr); gap: 10px 18px; max-width: 560px; }
       .settings dt { color: #9fb1c1; }
