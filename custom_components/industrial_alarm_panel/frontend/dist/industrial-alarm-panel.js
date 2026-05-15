@@ -30,6 +30,12 @@ class IndustrialAlarmPanel extends HTMLElement {
     this._refreshing = false;
     this._updatesSubscribed = false;
     this._unsubscribeUpdates = undefined;
+    this._columnWidths = {};
+    this._alarmVisualDelayMs = 2000;
+    this._alarmFirstSeenAt = {};
+    this._alarmVisualRefreshTimer = undefined;
+    this._browserHornCooldownMs = 2000;
+    this._lastBrowserHornAt = 0;
   }
 
   set hass(hass) {
@@ -40,9 +46,7 @@ class IndustrialAlarmPanel extends HTMLElement {
       this._load();
       this._timer = window.setInterval(() => this._load(), 5000);
     }
-    if (this._sound && this._sound.horn_active) {
-      this._playBrowserHorn();
-    }
+    this._maybePlayBrowserHorn();
   }
 
   set narrow(value) {
@@ -57,6 +61,10 @@ class IndustrialAlarmPanel extends HTMLElement {
   disconnectedCallback() {
     if (this._timer) {
       window.clearInterval(this._timer);
+    }
+    if (this._alarmVisualRefreshTimer) {
+      window.clearTimeout(this._alarmVisualRefreshTimer);
+      this._alarmVisualRefreshTimer = undefined;
     }
     if (this._unsubscribeUpdates) {
       Promise.resolve(this._unsubscribeUpdates)
@@ -106,6 +114,7 @@ class IndustrialAlarmPanel extends HTMLElement {
       this._sound = alarms?.sound || {};
       this._history = history?.events || [];
       this._rules = rules?.rules || [];
+      this._maybePlayBrowserHorn();
       if (!this._isEditingRulesForm()) this._render();
     } catch (err) {
       this._error = err.message || String(err);
@@ -144,6 +153,14 @@ class IndustrialAlarmPanel extends HTMLElement {
     this._audioEnabled = true;
     await this._callWS({ type: "industrial_alarm_panel/test_sound", priority: "critical" });
     await this._playBrowserHorn(true);
+  }
+
+  _maybePlayBrowserHorn() {
+    if (!this._sound?.horn_active || !this._audioEnabled) return;
+    const now = Date.now();
+    if (now - this._lastBrowserHornAt < this._browserHornCooldownMs) return;
+    this._lastBrowserHornAt = now;
+    this._playBrowserHorn();
   }
 
   async _playBrowserHorn(once = false) {
@@ -246,7 +263,7 @@ class IndustrialAlarmPanel extends HTMLElement {
         <button data-action="refresh">Refresh</button>
       </section>
       <section class="table-shell">
-        <table>
+        <table data-table-id="alarms">
           <thead>
             <tr>
               <th>Time</th><th>Priority</th><th>Area</th><th>System</th><th>Tag</th><th>Alarm</th><th>Source Value</th><th>State</th><th>Ack</th><th>Shelve</th><th>Instructions</th>
@@ -261,8 +278,8 @@ class IndustrialAlarmPanel extends HTMLElement {
   }
 
   _alarmRow(alarm) {
-    const flash = alarm.lifecycle_state === "ACTIVE_UNACK" || alarm.lifecycle_state === "CLEARED_UNACK";
-    const stateClass = `state-${String(alarm.lifecycle_state || "normal").toLowerCase().replace(/_/g, "-")}`;
+    const stateClass = this._alarmStateClass(alarm);
+    const flash = stateClass !== "state-pending-color" && (alarm.lifecycle_state === "ACTIVE_UNACK" || alarm.lifecycle_state === "CLEARED_UNACK");
     return `
       <tr class="alarm-row priority-${alarm.priority} ${stateClass} ${flash ? "flash" : ""}">
         <td>${this._time(alarm.active_since || alarm.cleared_at)}</td>
@@ -283,7 +300,7 @@ class IndustrialAlarmPanel extends HTMLElement {
   _historyView() {
     return `
       <section class="table-shell">
-        <table>
+        <table data-table-id="history">
           <thead><tr><th>Time</th><th>Event</th><th>Priority</th><th>Area</th><th>Tag</th><th>Alarm</th><th>From</th><th>To</th><th>Operator</th></tr></thead>
           <tbody>
             ${this._history.length ? this._history.map((event) => `
@@ -334,7 +351,7 @@ class IndustrialAlarmPanel extends HTMLElement {
           <button class="primary" data-action="create-rule">Add Rule</button>
         </div>
         <div class="table-shell">
-          <table>
+          <table data-table-id="rules">
             <thead><tr><th>ID</th><th>Entity</th><th>Name</th><th>Condition</th><th>Priority</th><th>Enabled</th></tr></thead>
             <tbody>${this._rules.map((rule) => `<tr><td>${this._escape(rule.id)}</td><td>${this._escape(rule.entity_id)}</td><td>${this._escape(rule.name)}</td><td>${this._escape(rule.condition)}</td><td>${this._escape(rule.priority)}</td><td>${rule.enabled ? "yes" : "no"}</td></tr>`).join("")}</tbody>
           </table>
@@ -395,6 +412,7 @@ class IndustrialAlarmPanel extends HTMLElement {
     });
     this.shadowRoot.querySelectorAll("[data-ack]").forEach((button) => button.addEventListener("click", () => this._ack(button.dataset.ack)));
     this.shadowRoot.querySelectorAll("[data-shelve]").forEach((button) => button.addEventListener("click", () => this._shelve(button.dataset.shelve)));
+    this._wireColumnResizers();
   }
 
   async _createRule() {
@@ -435,6 +453,83 @@ class IndustrialAlarmPanel extends HTMLElement {
     const active = this.shadowRoot?.activeElement;
     if (this._tab !== "rules" || !active) return false;
     return Boolean(active.matches("[data-new], [data-suggest]"));
+  }
+
+  _alarmStateClass(alarm) {
+    const lifecycle = String(alarm.lifecycle_state || "NORMAL");
+    const stateClass = `state-${lifecycle.toLowerCase().replace(/_/g, "-")}`;
+    if (!["ACTIVE_UNACK", "CLEARED_UNACK"].includes(lifecycle)) return stateClass;
+    if (this._isAlarmVisualDelayElapsed(alarm, lifecycle)) return stateClass;
+    this._scheduleAlarmVisualRefresh();
+    return "state-pending-color";
+  }
+
+  _isAlarmVisualDelayElapsed(alarm, lifecycle) {
+    const timestamp = Date.parse(alarm.active_since || alarm.cleared_at || "");
+    if (!Number.isNaN(timestamp)) {
+      return Date.now() - timestamp >= this._alarmVisualDelayMs;
+    }
+    const key = `${alarm.id || alarm.entity_id || alarm.name}:${lifecycle}`;
+    this._alarmFirstSeenAt[key] = this._alarmFirstSeenAt[key] || Date.now();
+    return Date.now() - this._alarmFirstSeenAt[key] >= this._alarmVisualDelayMs;
+  }
+
+  _scheduleAlarmVisualRefresh() {
+    if (this._alarmVisualRefreshTimer) return;
+    this._alarmVisualRefreshTimer = window.setTimeout(() => {
+      this._alarmVisualRefreshTimer = undefined;
+      if (!this._isEditingRulesForm()) this._render();
+    }, this._alarmVisualDelayMs);
+  }
+
+  _wireColumnResizers() {
+    this.shadowRoot.querySelectorAll("table").forEach((table, tableIndex) => {
+      const tableId = table.dataset.tableId || `table-${tableIndex}`;
+      const headers = Array.from(table.querySelectorAll("thead th"));
+      if (!headers.length) return;
+      let colgroup = table.querySelector("colgroup");
+      if (!colgroup) {
+        colgroup = document.createElement("colgroup");
+        headers.forEach(() => colgroup.appendChild(document.createElement("col")));
+        table.insertBefore(colgroup, table.firstElementChild);
+      }
+      const columns = Array.from(colgroup.children);
+      const savedWidths = this._columnWidths[tableId] || {};
+      headers.forEach((header, index) => {
+        const savedWidth = savedWidths[index];
+        if (savedWidth) {
+          header.style.width = `${savedWidth}px`;
+          if (columns[index]) columns[index].style.width = `${savedWidth}px`;
+        }
+        header.classList.add("resizable-column");
+        if (header.querySelector(".col-resizer")) return;
+        const handle = document.createElement("span");
+        handle.className = "col-resizer";
+        handle.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const startX = event.clientX;
+          const startWidth = header.getBoundingClientRect().width;
+          const column = columns[index];
+          const onMove = (moveEvent) => {
+            const width = Math.max(72, startWidth + moveEvent.clientX - startX);
+            this._columnWidths[tableId] = this._columnWidths[tableId] || {};
+            this._columnWidths[tableId][index] = width;
+            header.style.width = `${width}px`;
+            if (column) column.style.width = `${width}px`;
+          };
+          const onUp = () => {
+            document.removeEventListener("pointermove", onMove);
+            document.removeEventListener("pointerup", onUp);
+            document.removeEventListener("pointercancel", onUp);
+          };
+          document.addEventListener("pointermove", onMove);
+          document.addEventListener("pointerup", onUp, { once: true });
+          document.addEventListener("pointercancel", onUp, { once: true });
+        });
+        header.appendChild(handle);
+      });
+    });
   }
 
   _time(value) {
@@ -492,6 +587,7 @@ class IndustrialAlarmPanel extends HTMLElement {
       .alarm-row.priority-low.state-active-unack { background: #58a6ff; color: #101316; border-left-color: #1d5fa8; }
       .alarm-row.priority-info.state-active-unack { background: #83d2e6; color: #101316; border-left-color: #34899f; }
       .alarm-row.priority-status.state-active-unack { background: #7ee787; color: #101316; border-left-color: #2f8a39; }
+      .alarm-row.state-pending-color { background: #202832; color: #dbe4ec; border-left-color: #687585; }
       .alarm-row.state-cleared-unack { background: #d85b9d; color: #101316; border-left-color: #8e2f63; }
       .alarm-row.state-active-ack, .alarm-row.state-cleared-ack { background: #f3f4f6; color: #1f2933; border-left-color: #9ca3af; }
       .alarm-row.state-shelved, .alarm-row.state-disabled, .alarm-row.state-normal { background: #252c33; color: #aebdcc; border-left-color: #596675; }
@@ -511,6 +607,9 @@ class IndustrialAlarmPanel extends HTMLElement {
       .settings dl { display: grid; grid-template-columns: max-content minmax(120px, 1fr); gap: 10px 18px; max-width: 560px; }
       .settings dt { color: #9fb1c1; }
       .settings dd { margin: 0; }
+      .resizable-column { position: relative; min-width: 72px; padding-right: 16px; }
+      .col-resizer { position: absolute; top: 0; right: 0; width: 8px; height: 100%; cursor: col-resize; touch-action: none; user-select: none; }
+      .col-resizer:hover { background: rgba(255, 255, 255, .18); }
       @media (max-width: 720px) {
         .topbar { align-items: flex-start; flex-direction: column; }
         input { min-width: 0; width: 100%; }

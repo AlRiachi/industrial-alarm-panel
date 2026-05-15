@@ -53,6 +53,7 @@ class AlarmSoundManager:
         """Start or re-start sound for a new unacknowledged audible alarm."""
 
         new_alarm = rule_id not in self.active_audible_alarms
+        force_sound = new_alarm and (self.silenced or not self.horn_active)
         self.active_audible_alarms[rule_id] = priority
         if self.sound_mode == "none":
             return
@@ -61,8 +62,9 @@ class AlarmSoundManager:
             self.silenced_until = None
         if not self.silenced:
             self.horn_active = True
-            self.last_sound_at = datetime.now(UTC)
-            await self._play_media_if_needed(rule_id, priority)
+            if force_sound or self._sound_cooldown_elapsed():
+                self.last_sound_at = datetime.now(UTC)
+                await self._play_media_if_needed(rule_id, priority)
 
     async def on_alarm_acknowledged(self, rule_id: str) -> None:
         """Remove an alarm from the audible set."""
@@ -106,6 +108,13 @@ class AlarmSoundManager:
             await self._media_call(rule_id, priority)
         except Exception:  # pragma: no cover - defensive around HA service calls
             _LOGGER.exception("Failed to play alarm sound through media players")
+
+    def _sound_cooldown_elapsed(self) -> bool:
+        if self.last_sound_at is None or self.repeat_interval_seconds <= 0:
+            return True
+        return datetime.now(UTC) - self.last_sound_at >= timedelta(
+            seconds=self.repeat_interval_seconds
+        )
 
     def as_dict(self) -> dict[str, Any]:
         """Return API status."""

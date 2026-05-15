@@ -9,7 +9,7 @@ Industrial Alarm Panel is a Home Assistant custom integration that provides a DC
 
 It creates Home Assistant entities, exposes services and a websocket API, persists alarm rules and runtime state, stores alarm history in SQLite, and serves a dedicated sidebar panel at `/industrial-alarms`.
 
-Current release: `v1.0.8`
+Current release: `v1.0.9`
 
 ![Industrial Alarm Panel preview](docs/images/industrial-alarm-panel-preview.png)
 
@@ -24,6 +24,13 @@ Current release: `v1.0.8`
 - Suggested alarm rule generator for PowerTag/electrical/solar-water sensors
 - Event-driven panel refresh with a polling fallback
 - HACS-ready repository layout with local Home Assistant brand images
+
+## What's New in v1.0.9
+
+- Added resizable columns to the alarm, history, rules, and suggested-rule listings.
+- Added a 2-second delay before new unacknowledged alarms receive full DCS row coloring, reducing transient visual noise.
+- Throttled browser and media-player horn output so repeated Home Assistant refreshes or alarm floods do not stack noisy tones.
+- Bumped the frontend cache-busting version and package metadata for the new release.
 
 ## What's New in v1.0.8
 

@@ -87,14 +87,36 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
         self.assertIn("_isEditingRulesForm", source)
         self.assertIn("if (!this._isEditingRulesForm()) this._render();", source)
 
+    def test_frontend_has_resizable_listing_columns(self) -> None:
+        source = Path(
+            "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
+        ).read_text()
+
+        self.assertIn("_wireColumnResizers", source)
+        self.assertIn("_columnWidths", source)
+        self.assertIn("col-resizer", source)
+        self.assertIn("pointerdown", source)
+        self.assertIn("colgroup", source)
+        self.assertIn("data-table-id", source)
+
+    def test_frontend_delays_alarm_color_and_throttles_browser_horn(self) -> None:
+        source = Path(
+            "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
+        ).read_text()
+
+        self.assertIn("_alarmVisualDelayMs = 2000", source)
+        self.assertIn("state-pending-color", source)
+        self.assertIn("_browserHornCooldownMs = 2000", source)
+        self.assertIn("_maybePlayBrowserHorn", source)
+
     def test_frontend_version_is_bumped_for_suggested_rule_ui(self) -> None:
         const_source = Path("custom_components/industrial_alarm_panel/const.py").read_text()
         manifest_source = Path(
             "custom_components/industrial_alarm_panel/manifest.json"
         ).read_text()
 
-        self.assertIn('VERSION = "1.0.8"', const_source)
-        self.assertIn('"version": "1.0.8"', manifest_source)
+        self.assertIn('VERSION = "1.0.9"', const_source)
+        self.assertIn('"version": "1.0.9"', manifest_source)
 
     def test_websocket_registers_suggested_rule_command(self) -> None:
         source = Path("custom_components/industrial_alarm_panel/websocket_api.py").read_text()
