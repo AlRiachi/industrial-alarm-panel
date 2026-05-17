@@ -11,3 +11,4 @@ industrial_alarm_panel_history.db
 htmlcov/
 /dist/
 node_modules/
+.worktrees/
