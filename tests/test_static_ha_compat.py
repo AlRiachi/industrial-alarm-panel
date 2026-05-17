@@ -118,11 +118,17 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
         self.assertIn('VERSION = "1.0.9"', const_source)
         self.assertIn('"version": "1.0.9"', manifest_source)
 
-    def test_websocket_registers_suggested_rule_command(self) -> None:
+    def test_websocket_registers_suggested_rule_management_commands(self) -> None:
         source = Path("custom_components/industrial_alarm_panel/websocket_api.py").read_text()
 
+        self.assertIn("websocket_list_suggested_rules", source)
         self.assertIn("websocket_create_suggested_rules", source)
-        self.assertIn("suggest_alarm_rules", source)
+        self.assertIn("websocket_delete_rules", source)
+        self.assertIn("select_suggested_rules", source)
+        self.assertIn("delete_rules(", source)
+        self.assertIn("generated_only", source)
+        self.assertIn("rule_ids", source)
+        self.assertIn("remove_per_rule_entity_registry_entries", source)
 
 
 if __name__ == "__main__":
