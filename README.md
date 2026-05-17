@@ -9,7 +9,7 @@ Industrial Alarm Panel is a Home Assistant custom integration that provides a DC
 
 It creates Home Assistant entities, exposes services and a websocket API, persists alarm rules and runtime state, stores alarm history in SQLite, and serves a dedicated sidebar panel at `/industrial-alarms`.
 
-Current release: `v1.0.9`
+Current release: `v1.0.10`
 
 ![Industrial Alarm Panel preview](docs/images/industrial-alarm-panel-preview.png)
 
@@ -103,7 +103,7 @@ Rules use stable Home Assistant `entity_id` values. For numeric range alarms, cr
 
 ### Suggested Rules
 
-Open **Industrial Alarms > Rules > Suggested Rules** and click **Create Suggested Rules** to scan current Home Assistant `sensor.*` entities and create common rules automatically.
+Open **Industrial Alarms > Rules > Suggested Rules** and click **Preview Suggested Rules** to scan current Home Assistant `sensor.*` entities before creating anything. Select the suggestions you want, then click **Create Selected**. **Create All** is still available after preview, but it asks for confirmation and shows the estimated Home Assistant entity count.
 
 Default suggested thresholds:
 
@@ -112,7 +112,9 @@ Default suggested thresholds:
 - `High V`: `253 V`
 - `Solar C`: `75 C` for solar water/tank/boiler temperature sensors
 
-The generator detects candidates from `device_class`, unit of measurement, entity ID, and friendly name. It skips generated rule IDs that already exist so repeated clicks do not duplicate rules.
+The generator detects candidates from `device_class`, unit of measurement, entity ID, and friendly name. It skips generated rule IDs that already exist so repeated previews or creates do not duplicate rules. Generated suggested rules use IDs beginning with `auto_`.
+
+If too many suggested rules were created, use **Remove Auto-Generated Rules** in the same section. It removes stored `auto_` rules and the per-rule alarm/button entities created by this integration, but it does not remove the original source sensors. For manual cleanup, select rows in the Rules table and click **Delete Selected**.
 
 ### Rule Fields
 
