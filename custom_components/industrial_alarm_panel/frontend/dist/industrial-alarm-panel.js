@@ -30,6 +30,7 @@ class IndustrialAlarmPanel extends HTMLElement {
     this._tab = "active";
     this._search = "";
     this._priority = "all";
+    this._shelveDurationMinutes = 60;
     this._audioEnabled = false;
     this._refreshing = false;
     this._updatesSubscribed = false;
@@ -154,7 +155,7 @@ class IndustrialAlarmPanel extends HTMLElement {
     await this._callWS({
       type: "industrial_alarm_panel/shelve",
       rule_id: ruleId,
-      duration_minutes: 60,
+      duration_minutes: this._shelveDurationMinutes,
     });
     await this._load();
   }
@@ -266,6 +267,17 @@ class IndustrialAlarmPanel extends HTMLElement {
     return tabs.map(([id, label]) => `<button class="${this._tab === id ? "selected" : ""}" data-tab="${id}">${label}</button>`).join("");
   }
 
+  _shelveDurationOptions() {
+    return [
+      [60, "1 hour"],
+      [240, "4 hours"],
+      [480, "8 hours"],
+      [1440, "1 day"],
+      [4320, "3 days"],
+      [10080, "7 days"],
+    ];
+  }
+
   _alarmView(alarms) {
     return `
       <section class="toolbar">
@@ -273,17 +285,22 @@ class IndustrialAlarmPanel extends HTMLElement {
         <select data-field="priority">
           ${["all", "critical", "high", "medium", "low", "info", "status"].map((priority) => `<option value="${priority}" ${this._priority === priority ? "selected" : ""}>${priority}</option>`).join("")}
         </select>
+        <label class="shelve-duration">Shelve for
+          <select data-field="shelve-duration">
+            ${this._shelveDurationOptions().map(([minutes, label]) => `<option value="${minutes}" ${this._shelveDurationMinutes === minutes ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+        </label>
         <button data-action="refresh">Refresh</button>
       </section>
       <section class="table-shell">
         <table data-table-id="alarms">
           <thead>
             <tr>
-              <th>Time</th><th>Priority</th><th>Area</th><th>System</th><th>Tag</th><th>Alarm</th><th>Source Value</th><th>State</th><th>Ack</th><th>Shelve</th><th>Instructions</th>
+              <th>Time</th><th>Priority</th><th>Area</th><th>System</th><th>Tag</th><th>Alarm</th><th>Source Value</th><th>State</th><th>Shelved Until</th><th>Ack</th><th>Shelve</th><th>Instructions</th>
             </tr>
           </thead>
           <tbody>
-            ${alarms.length ? alarms.map((alarm) => this._alarmRow(alarm)).join("") : `<tr><td colspan="11" class="empty">No alarms in this view</td></tr>`}
+            ${alarms.length ? alarms.map((alarm) => this._alarmRow(alarm)).join("") : `<tr><td colspan="12" class="empty">No alarms in this view</td></tr>`}
           </tbody>
         </table>
       </section>
@@ -303,6 +320,7 @@ class IndustrialAlarmPanel extends HTMLElement {
         <td>${this._escape(alarm.name)}</td>
         <td>${this._escape(String(alarm.last_value ?? alarm.last_source_state ?? ""))}</td>
         <td>${this._escape(alarm.lifecycle_state)}</td>
+        <td>${this._time(alarm.shelve_expiry)}</td>
         <td><button data-ack="${this._escape(alarm.id)}" ${alarm.acknowledged ? "disabled" : ""}>Ack</button></td>
         <td><button data-shelve="${this._escape(alarm.id)}" ${alarm.shelved || alarm.disabled ? "disabled" : ""}>Shelve</button></td>
         <td>${this._escape(alarm.instructions || "")}</td>
@@ -482,6 +500,11 @@ class IndustrialAlarmPanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-field='priority']")?.addEventListener("change", (event) => {
       this._priority = event.target.value;
       this._render();
+    });
+    this.shadowRoot.querySelector("[data-field='shelve-duration']")?.addEventListener("change", (event) => {
+      const minutes = Number(event.target.value);
+      const validDurations = new Set(this._shelveDurationOptions().map(([value]) => value));
+      this._shelveDurationMinutes = validDurations.has(minutes) ? minutes : 60;
     });
     this.shadowRoot.querySelectorAll("[data-ack]").forEach((button) => button.addEventListener("click", () => this._ack(button.dataset.ack)));
     this.shadowRoot.querySelectorAll("[data-shelve]").forEach((button) => button.addEventListener("click", () => this._shelve(button.dataset.shelve)));
@@ -774,11 +797,12 @@ class IndustrialAlarmPanel extends HTMLElement {
       .tabs { padding: 10px 18px; background: #14191f; border-bottom: 1px solid #26313b; }
       .tabs button.selected { background: #d9e2ec; color: #101316; border-color: #d9e2ec; }
       .toolbar { padding: 12px 18px; }
+      .shelve-duration { display: flex; gap: 6px; align-items: center; color: #b8c7d4; font-size: 13px; }
       .table-shell { overflow: auto; padding: 0 18px 18px; }
       table { width: 100%; border-collapse: collapse; background: #11161b; table-layout: auto; }
       th, td { border-bottom: 1px solid #28323c; padding: 8px 9px; text-align: left; font-size: 13px; white-space: nowrap; }
       th { background: #202832; color: #b8c7d4; position: sticky; top: 0; z-index: 1; }
-      td:nth-child(6), td:nth-child(11) { white-space: normal; min-width: 180px; }
+      td:nth-child(6), td:nth-child(12) { white-space: normal; min-width: 180px; }
       tr { border-left: 6px solid #4b5563; }
       .alarm-row { background: #11161b; color: #e6edf3; }
       .alarm-row td { border-bottom-color: rgba(16, 19, 22, .35); }
@@ -822,6 +846,8 @@ class IndustrialAlarmPanel extends HTMLElement {
         .menu-button { display: inline-flex; align-items: center; justify-content: center; }
         input { min-width: 0; width: 100%; }
         .actions, .toolbar, .rule-form { width: 100%; }
+        .shelve-duration { width: 100%; }
+        .shelve-duration select { flex: 1 1 auto; }
         button, select { flex: 1 1 auto; }
       }
     `;

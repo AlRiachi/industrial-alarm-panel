@@ -9,7 +9,7 @@ Industrial Alarm Panel is a Home Assistant custom integration that provides a DC
 
 It creates Home Assistant entities, exposes services and a websocket API, persists alarm rules and runtime state, stores alarm history in SQLite, and serves a dedicated sidebar panel at `/industrial-alarms`.
 
-Current release: `v1.0.11`
+Current release: `v1.0.12`
 
 ![Industrial Alarm Panel preview](docs/images/industrial-alarm-panel-preview.png)
 
@@ -24,6 +24,13 @@ Current release: `v1.0.11`
 - Suggested alarm rule generator for PowerTag/electrical/solar-water sensors
 - Event-driven panel refresh with a polling fallback
 - HACS-ready repository layout with local Home Assistant brand images
+
+## What's New in v1.0.12
+
+- Added panel presets for shelving alarms for 1 hour, 4 hours, 8 hours, 1 day, 3 days, or 7 days.
+- Added a **Shelved Until** alarm table column so operators can see the current `shelve_expiry`.
+- Kept the Home Assistant `shelve_alarm` service duration-based with `duration_minutes`; use `1440` for 1 day, `4320` for 3 days, or `10080` for 7 days.
+- Bumped the frontend cache-busting version and package metadata for the new release.
 
 ## What's New in v1.0.11
 
@@ -252,6 +259,7 @@ The integration registers:
 - `industrial_alarm_panel.export_history`
 
 Silence only stops horn output. Acknowledgement changes the alarm lifecycle state.
+Shelving is temporary. In the panel, choose a **Shelve for** preset before clicking a row's **Shelve** button. In service calls, set `duration_minutes`; day-based shelves use minute values such as `1440` for 1 day and `10080` for 7 days.
 
 ## Sound
 

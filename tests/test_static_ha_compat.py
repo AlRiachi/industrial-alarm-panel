@@ -120,7 +120,7 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
         pyproject_source = Path("pyproject.toml").read_text()
         readme_source = Path("README.md").read_text()
 
-        expected_version = "1.0.11"
+        expected_version = "1.0.12"
         const_version_match = re.search(r'^VERSION = "([^"]+)"$', const_source, re.MULTILINE)
         readme_version_match = re.search(
             r"^Current release: `v([^`]+)`$", readme_source, re.MULTILINE
@@ -202,6 +202,27 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
         self.assertIn("open: true", source)
         self.assertIn("data-action=\"toggle-menu\"", source)
         self.assertIn("menu-button", source)
+
+    def test_frontend_allows_operator_to_choose_shelve_duration(self) -> None:
+        source = Path(
+            "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
+        ).read_text()
+
+        self.assertIn("_shelveDurationMinutes", source)
+        self.assertIn("_shelveDurationOptions", source)
+        self.assertIn("data-field=\"shelve-duration\"", source)
+        self.assertIn("1 day", source)
+        self.assertIn("3 days", source)
+        self.assertIn("7 days", source)
+        self.assertIn("duration_minutes: this._shelveDurationMinutes", source)
+
+    def test_frontend_displays_shelve_expiry(self) -> None:
+        source = Path(
+            "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
+        ).read_text()
+
+        self.assertIn("Shelved Until", source)
+        self.assertIn("shelve_expiry", source)
 
 
 if __name__ == "__main__":
