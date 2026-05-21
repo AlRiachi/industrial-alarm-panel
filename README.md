@@ -9,8 +9,6 @@ Industrial Alarm Panel is a Home Assistant custom integration that provides a DC
 
 It creates Home Assistant entities, exposes services and a websocket API, persists alarm rules and runtime state, stores alarm history in SQLite, and serves a dedicated sidebar panel at `/industrial-alarms`.
 
-Current release: `v1.0.12`
-
 ![Industrial Alarm Panel preview](docs/images/industrial-alarm-panel-preview.png)
 
 ## Highlights
@@ -24,6 +22,13 @@ Current release: `v1.0.12`
 - Suggested alarm rule generator for PowerTag/electrical/solar-water sensors
 - Event-driven panel refresh with a polling fallback
 - HACS-ready repository layout with local Home Assistant brand images
+
+## What's New in v1.0.13
+
+- Fixed alarm timing fields so `delay_on_seconds`, `delay_off_seconds`, and `min_active_duration_seconds` now drive the alarm state machine instead of only being stored.
+- Added Home Assistant timer scheduling so delayed alarm activations and clears complete even when the source entity does not change again.
+- Persisted pending timing state so debounce windows survive Home Assistant storage round-trips.
+- Clarified how to use `delay_on_seconds: 5` for alarms that should activate only after the condition lasts longer than 5 seconds.
 
 ## What's New in v1.0.12
 
@@ -146,7 +151,13 @@ Common fields:
 - `priority`: `critical`, `high`, `medium`, `low`, `info`, or `status`.
 - `instructions`: short operator guidance shown in the panel.
 
-Optional fields include `requires_ack`, `audible`, `delay_on_seconds`, `delay_off_seconds`, `show_when_cleared`, and `shelving_allowed`.
+Optional fields include `requires_ack`, `audible`, `delay_on_seconds`, `delay_off_seconds`, `min_active_duration_seconds`, `repeat_alarm_after_seconds`, `show_when_cleared`, and `shelving_allowed`.
+
+Timing fields are in seconds:
+
+- `delay_on_seconds`: the source condition must remain true for this long before the alarm activates. Use `5` for "alarm only if this condition lasts longer than 5 seconds".
+- `delay_off_seconds`: the source condition must remain clear for this long before an active alarm clears.
+- `min_active_duration_seconds`: once activated, keep the alarm active for at least this long even if the source clears sooner.
 
 ### High Temperature Rule
 

@@ -47,6 +47,14 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
 
         self.assertIn("?v={VERSION}", source)
 
+    def test_integration_schedules_due_alarm_timing_transitions(self) -> None:
+        source = Path("custom_components/industrial_alarm_panel/__init__.py").read_text()
+
+        self.assertIn("async_call_later", source)
+        self.assertIn("next_due_transition_at", source)
+        self.assertIn("process_due_transitions", source)
+        self.assertIn("remove_delay_timer", source)
+
     def test_frontend_subscribes_to_alarm_update_events(self) -> None:
         source = Path(
             "custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js"
@@ -112,7 +120,7 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
         self.assertIn("_browserHornCooldownMs = 2000", source)
         self.assertIn("_maybePlayBrowserHorn", source)
 
-    def test_frontend_version_is_bumped_for_rule_management_ui(self) -> None:
+    def test_release_version_metadata_is_bumped(self) -> None:
         const_source = Path("custom_components/industrial_alarm_panel/const.py").read_text()
         manifest_source = Path(
             "custom_components/industrial_alarm_panel/manifest.json"
@@ -120,24 +128,21 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
         pyproject_source = Path("pyproject.toml").read_text()
         readme_source = Path("README.md").read_text()
 
-        expected_version = "1.0.12"
+        expected_version = "1.0.13"
         const_version_match = re.search(r'^VERSION = "([^"]+)"$', const_source, re.MULTILINE)
-        readme_version_match = re.search(
-            r"^Current release: `v([^`]+)`$", readme_source, re.MULTILINE
-        )
 
         self.assertIsNotNone(const_version_match)
-        self.assertIsNotNone(readme_version_match)
+        self.assertNotIn("Current release:", readme_source)
+        self.assertIn(f"## What's New in v{expected_version}", readme_source)
 
         const_version = const_version_match.group(1)
         manifest_version = json.loads(manifest_source)["version"]
         pyproject_version = tomllib.loads(pyproject_source)["project"]["version"]
-        readme_version = readme_version_match.group(1)
 
         self.assertEqual(expected_version, const_version)
         self.assertEqual(
             {expected_version},
-            {const_version, manifest_version, pyproject_version, readme_version},
+            {const_version, manifest_version, pyproject_version},
         )
 
     def test_websocket_registers_suggested_rule_management_commands(self) -> None:

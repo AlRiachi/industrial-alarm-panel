@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import logging
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -42,6 +43,7 @@ class IndustrialAlarmPanelRuntime:
     sound_manager: AlarmSoundManager
     engine: AlarmEngine
     remove_state_listener: Any | None = None
+    remove_delay_timer: Any | None = None
     remove_frontend_update_listener: Any | None = None
     remove_panel: Any | None = None
 
@@ -55,7 +57,10 @@ async def async_setup_entry(
     """Set up Industrial Alarm Panel from a config entry."""
 
     from homeassistant.core import Event, callback
-    from homeassistant.helpers.event import async_track_state_change_event
+    from homeassistant.helpers.event import (
+        async_call_later,
+        async_track_state_change_event,
+    )
 
     from .alarm_panel import async_register_panel
     from .frontend_events import attach_alarm_update_event_listener
@@ -128,6 +133,33 @@ async def async_setup_entry(
         hass, entry.entry_id, engine
     )
 
+    def _reschedule_delay_timer() -> None:
+        if runtime.remove_delay_timer:
+            runtime.remove_delay_timer()
+            runtime.remove_delay_timer = None
+
+        due_at = engine.next_due_transition_at()
+        if due_at is None:
+            return
+
+        delay_seconds = max(0.0, (due_at - datetime.now(UTC)).total_seconds())
+        runtime.remove_delay_timer = async_call_later(
+            hass, delay_seconds, _delay_timer_due
+        )
+
+    async def _process_delay_timer() -> None:
+        await engine.process_due_transitions()
+        _reschedule_delay_timer()
+
+    @callback
+    def _delay_timer_due(_now: datetime) -> None:
+        runtime.remove_delay_timer = None
+        hass.async_create_task(_process_delay_timer())
+
+    async def _process_state_change(entity_id: str, state: Any) -> None:
+        await engine.process_state(entity_id, state)
+        _reschedule_delay_timer()
+
     tracked_entities = sorted(
         {rule.entity_id for rule in engine.rules.values() if rule.entity_id}
     )
@@ -139,12 +171,14 @@ async def async_setup_entry(
             if new_state is None:
                 return
             hass.async_create_task(
-                engine.process_state(new_state.entity_id, new_state.state)
+                _process_state_change(new_state.entity_id, new_state.state)
             )
 
         runtime.remove_state_listener = async_track_state_change_event(
             hass, tracked_entities, _state_changed
         )
+
+    _reschedule_delay_timer()
 
     await async_setup_services(hass)
     async_register_websocket_api(hass)
@@ -166,6 +200,8 @@ async def async_unload_entry(
     if unload_ok:
         if runtime.remove_state_listener:
             runtime.remove_state_listener()
+        if runtime.remove_delay_timer:
+            runtime.remove_delay_timer()
         if runtime.remove_frontend_update_listener:
             runtime.remove_frontend_update_listener()
         if runtime.remove_panel:

@@ -390,6 +390,8 @@ class AlarmRuntimeState:
             "previous_lifecycle_state": self.previous_lifecycle_state.value
             if self.previous_lifecycle_state
             else None,
+            "pending_active_since": _format_datetime(self.pending_active_since),
+            "pending_clear_since": _format_datetime(self.pending_clear_since),
         }
 
     @classmethod
@@ -412,6 +414,8 @@ class AlarmRuntimeState:
             )
             if data.get("previous_lifecycle_state")
             else None,
+            pending_active_since=_parse_datetime(data.get("pending_active_since")),
+            pending_clear_since=_parse_datetime(data.get("pending_clear_since")),
         )
 
 

@@ -57,6 +57,144 @@ class AlarmEngineTests(unittest.IsolatedAsyncioTestCase):
             AlarmLifecycleState.CLEARED_UNACK,
         )
 
+    async def test_delay_on_activates_after_condition_persists_past_delay(self) -> None:
+        rule = AlarmRule.from_dict(
+            {
+                "id": "pump_fault",
+                "entity_id": "binary_sensor.pump_fault",
+                "name": "Pump Fault",
+                "condition": "is_on",
+                "delay_on_seconds": 5,
+                "priority": "high",
+            }
+        )
+        engine = AlarmEngine([rule], self.history, now=self.clock.now)
+
+        await engine.process_state("binary_sensor.pump_fault", "on")
+
+        runtime = engine.get_alarm("pump_fault")
+        self.assertEqual(runtime.lifecycle_state, AlarmLifecycleState.NORMAL)
+        self.assertEqual(runtime.pending_active_since, self.clock.now())
+        self.assertEqual(
+            engine.next_due_transition_at(),
+            self.clock.now() + timedelta(seconds=5),
+        )
+
+        self.clock.advance(4)
+        await engine.process_due_transitions()
+        self.assertEqual(
+            engine.get_alarm("pump_fault").lifecycle_state,
+            AlarmLifecycleState.NORMAL,
+        )
+
+        self.clock.advance(1)
+        await engine.process_due_transitions()
+        self.assertEqual(
+            engine.get_alarm("pump_fault").lifecycle_state,
+            AlarmLifecycleState.ACTIVE_UNACK,
+        )
+
+    async def test_delay_on_cancels_when_condition_clears_before_due(self) -> None:
+        rule = AlarmRule.from_dict(
+            {
+                "id": "pump_fault",
+                "entity_id": "binary_sensor.pump_fault",
+                "name": "Pump Fault",
+                "condition": "is_on",
+                "delay_on_seconds": 5,
+                "priority": "high",
+            }
+        )
+        engine = AlarmEngine([rule], self.history, now=self.clock.now)
+
+        await engine.process_state("binary_sensor.pump_fault", "on")
+        self.clock.advance(3)
+        await engine.process_state("binary_sensor.pump_fault", "off")
+        self.clock.advance(2)
+        await engine.process_due_transitions()
+
+        runtime = engine.get_alarm("pump_fault")
+        self.assertEqual(runtime.lifecycle_state, AlarmLifecycleState.NORMAL)
+        self.assertIsNone(runtime.pending_active_since)
+        self.assertIsNone(engine.next_due_transition_at())
+
+    async def test_delay_off_clears_after_condition_remains_clear_past_delay(self) -> None:
+        rule = AlarmRule.from_dict(
+            {
+                "id": "pump_fault",
+                "entity_id": "binary_sensor.pump_fault",
+                "name": "Pump Fault",
+                "condition": "is_on",
+                "delay_off_seconds": 5,
+                "priority": "high",
+            }
+        )
+        engine = AlarmEngine([rule], self.history, now=self.clock.now)
+
+        await engine.process_state("binary_sensor.pump_fault", "on")
+        await engine.process_state("binary_sensor.pump_fault", "off")
+
+        runtime = engine.get_alarm("pump_fault")
+        self.assertEqual(runtime.lifecycle_state, AlarmLifecycleState.ACTIVE_UNACK)
+        self.assertEqual(runtime.pending_clear_since, self.clock.now())
+        self.assertEqual(
+            engine.next_due_transition_at(),
+            self.clock.now() + timedelta(seconds=5),
+        )
+
+        self.clock.advance(4)
+        await engine.process_due_transitions()
+        self.assertEqual(
+            engine.get_alarm("pump_fault").lifecycle_state,
+            AlarmLifecycleState.ACTIVE_UNACK,
+        )
+
+        self.clock.advance(1)
+        await engine.process_due_transitions()
+        self.assertEqual(
+            engine.get_alarm("pump_fault").lifecycle_state,
+            AlarmLifecycleState.CLEARED_UNACK,
+        )
+
+    async def test_min_active_duration_holds_clear_until_minimum_elapsed(self) -> None:
+        rule = AlarmRule.from_dict(
+            {
+                "id": "pump_fault",
+                "entity_id": "binary_sensor.pump_fault",
+                "name": "Pump Fault",
+                "condition": "is_on",
+                "min_active_duration_seconds": 5,
+                "priority": "high",
+            }
+        )
+        engine = AlarmEngine([rule], self.history, now=self.clock.now)
+
+        await engine.process_state("binary_sensor.pump_fault", "on")
+        self.clock.advance(2)
+        await engine.process_state("binary_sensor.pump_fault", "off")
+
+        runtime = engine.get_alarm("pump_fault")
+        self.assertEqual(runtime.lifecycle_state, AlarmLifecycleState.ACTIVE_UNACK)
+        self.assertEqual(runtime.pending_clear_since, self.clock.now())
+        self.assertEqual(
+            engine.next_due_transition_at(),
+            runtime.active_timestamp + timedelta(seconds=5),
+        )
+
+        self.clock.advance(2)
+        await engine.process_due_transitions()
+        self.assertEqual(
+            engine.get_alarm("pump_fault").lifecycle_state,
+            AlarmLifecycleState.ACTIVE_UNACK,
+        )
+
+        self.clock.advance(1)
+        await engine.process_due_transitions()
+        self.assertEqual(
+            engine.get_alarm("pump_fault").lifecycle_state,
+            AlarmLifecycleState.CLEARED_UNACK,
+        )
+
     async def test_ack_and_clear_lifecycle_transitions_match_dcs_rules(self) -> None:
         rule = AlarmRule.from_dict(
             {

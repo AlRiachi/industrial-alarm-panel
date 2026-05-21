@@ -134,6 +134,38 @@ class AlarmEngine:
             if rule.entity_id == entity_id:
                 await self.evaluate_rule(rule.id, new_state, previous)
 
+    async def process_due_transitions(self) -> None:
+        """Evaluate delayed alarm transitions that are due at the current time."""
+
+        now = self._now()
+        due_rule_ids: list[str] = []
+        for rule in list(self.rules.values()):
+            runtime = self.states.setdefault(
+                rule.id, AlarmRuntimeState(rule_id=rule.id)
+            )
+            due_at = self._rule_due_transition_at(rule, runtime)
+            if due_at is None or due_at > now or runtime.last_state is None:
+                continue
+            due_rule_ids.append(rule.id)
+
+        for rule_id in due_rule_ids:
+            runtime = self.states[rule_id]
+            if runtime.last_state is not None:
+                await self.evaluate_rule(rule_id, runtime.last_state)
+
+    def next_due_transition_at(self) -> datetime | None:
+        """Return the next delayed transition timestamp, if any."""
+
+        due_times: list[datetime] = []
+        for rule in self.rules.values():
+            runtime = self.states.setdefault(
+                rule.id, AlarmRuntimeState(rule_id=rule.id)
+            )
+            due_at = self._rule_due_transition_at(rule, runtime)
+            if due_at is not None:
+                due_times.append(due_at)
+        return min(due_times) if due_times else None
+
     async def evaluate_rule(
         self, rule_id: str, new_state: Any, previous_state: Any = None
     ) -> AlarmEvaluationResult:
@@ -144,6 +176,8 @@ class AlarmEngine:
         now = self._now()
 
         if not rule.enabled or runtime.lifecycle_state == AlarmLifecycleState.DISABLED:
+            runtime.pending_active_since = None
+            runtime.pending_clear_since = None
             return AlarmEvaluationResult(False, str(new_state), new_state, reason="disabled")
 
         if runtime.lifecycle_state == AlarmLifecycleState.SHELVED:
@@ -153,6 +187,8 @@ class AlarmEngine:
             else:
                 runtime.last_state = str(new_state)
                 runtime.last_value = new_state
+                runtime.pending_active_since = None
+                runtime.pending_clear_since = None
                 await self._persist()
                 return AlarmEvaluationResult(
                     False, str(new_state), new_state, reason="shelved"
@@ -168,9 +204,9 @@ class AlarmEngine:
         runtime.last_value = result.source_value
 
         if result.matched:
-            await self._handle_matched(rule, runtime, result)
+            await self._handle_matched_evaluation(rule, runtime, result, now)
         else:
-            await self._handle_cleared(rule, runtime, result)
+            await self._handle_cleared_evaluation(rule, runtime, result, now)
 
         await self._persist()
         self._notify()
@@ -188,6 +224,53 @@ class AlarmEngine:
         await self._persist()
         self._notify()
 
+    async def _handle_matched_evaluation(
+        self,
+        rule: AlarmRule,
+        runtime: AlarmRuntimeState,
+        result: AlarmEvaluationResult,
+        now: datetime,
+        *,
+        operator: str | None = None,
+    ) -> None:
+        runtime.pending_clear_since = None
+        if runtime.is_active:
+            runtime.pending_active_since = None
+            return
+
+        delay_on_seconds = self._positive_seconds(rule.delay_on_seconds)
+        if delay_on_seconds:
+            if runtime.pending_active_since is None:
+                runtime.pending_active_since = now
+            due_at = runtime.pending_active_since + timedelta(seconds=delay_on_seconds)
+            if now < due_at:
+                return
+
+        runtime.pending_active_since = None
+        await self._handle_matched(rule, runtime, result, operator=operator)
+
+    async def _handle_cleared_evaluation(
+        self,
+        rule: AlarmRule,
+        runtime: AlarmRuntimeState,
+        result: AlarmEvaluationResult,
+        now: datetime,
+    ) -> None:
+        runtime.pending_active_since = None
+        if not runtime.is_active:
+            runtime.pending_clear_since = None
+            return
+
+        if self._clear_delay_required(rule, runtime, now):
+            if runtime.pending_clear_since is None:
+                runtime.pending_clear_since = now
+            due_at = self._clear_due_transition_at(rule, runtime)
+            if due_at is not None and now < due_at:
+                return
+
+        runtime.pending_clear_since = None
+        await self._handle_cleared(rule, runtime, result)
+
     async def _handle_matched(
         self,
         rule: AlarmRule,
@@ -196,6 +279,8 @@ class AlarmEngine:
         *,
         operator: str | None = None,
     ) -> None:
+        runtime.pending_active_since = None
+        runtime.pending_clear_since = None
         if runtime.is_active:
             return
 
@@ -226,6 +311,8 @@ class AlarmEngine:
         runtime: AlarmRuntimeState,
         result: AlarmEvaluationResult,
     ) -> None:
+        runtime.pending_active_since = None
+        runtime.pending_clear_since = None
         if runtime.lifecycle_state not in {
             AlarmLifecycleState.ACTIVE_UNACK,
             AlarmLifecycleState.ACTIVE_ACK,
@@ -341,6 +428,8 @@ class AlarmEngine:
             raise AlarmValidationError("shelving is not allowed for this rule")
         runtime = self.states[rule_id]
         previous = runtime.lifecycle_state
+        runtime.pending_active_since = None
+        runtime.pending_clear_since = None
         runtime.previous_lifecycle_state = previous
         runtime.lifecycle_state = AlarmLifecycleState.SHELVED
         runtime.shelve_expiry = self._now() + timedelta(minutes=duration_minutes)
@@ -365,6 +454,8 @@ class AlarmEngine:
         rule = self.rules[rule_id]
         runtime = self.states[rule_id]
         previous = runtime.lifecycle_state
+        runtime.pending_active_since = None
+        runtime.pending_clear_since = None
         runtime.lifecycle_state = AlarmLifecycleState.NORMAL
         runtime.shelve_expiry = None
         runtime.previous_lifecycle_state = previous
@@ -387,6 +478,8 @@ class AlarmEngine:
         runtime = self.states[rule_id]
         previous = runtime.lifecycle_state
         self.rules[rule_id] = replace(rule, enabled=False)
+        runtime.pending_active_since = None
+        runtime.pending_clear_since = None
         runtime.lifecycle_state = AlarmLifecycleState.DISABLED
         runtime.previous_lifecycle_state = previous
         await self._record_event(
@@ -474,6 +567,70 @@ class AlarmEngine:
             for rule in self.rules.values()
             if rule.priority == priority
         )
+
+    def _rule_due_transition_at(
+        self, rule: AlarmRule, runtime: AlarmRuntimeState
+    ) -> datetime | None:
+        """Return when a rule's pending transition should be evaluated."""
+
+        if (
+            runtime.pending_active_since is not None
+            and not runtime.is_active
+            and self._positive_seconds(rule.delay_on_seconds)
+        ):
+            return runtime.pending_active_since + timedelta(
+                seconds=self._positive_seconds(rule.delay_on_seconds)
+            )
+
+        if runtime.pending_clear_since is not None and runtime.is_active:
+            return self._clear_due_transition_at(rule, runtime)
+
+        return None
+
+    def _clear_due_transition_at(
+        self, rule: AlarmRule, runtime: AlarmRuntimeState
+    ) -> datetime | None:
+        """Return the earliest time an active alarm is allowed to clear."""
+
+        due_times: list[datetime] = []
+        delay_off_seconds = self._positive_seconds(rule.delay_off_seconds)
+        min_active_duration_seconds = self._positive_seconds(
+            rule.min_active_duration_seconds
+        )
+
+        if delay_off_seconds and runtime.pending_clear_since is not None:
+            due_times.append(
+                runtime.pending_clear_since + timedelta(seconds=delay_off_seconds)
+            )
+        if min_active_duration_seconds and runtime.active_timestamp is not None:
+            due_times.append(
+                runtime.active_timestamp
+                + timedelta(seconds=min_active_duration_seconds)
+            )
+
+        return max(due_times) if due_times else None
+
+    def _clear_delay_required(
+        self, rule: AlarmRule, runtime: AlarmRuntimeState, now: datetime
+    ) -> bool:
+        """Return whether a clear transition should wait before clearing."""
+
+        if self._positive_seconds(rule.delay_off_seconds):
+            return True
+        min_active_duration_seconds = self._positive_seconds(
+            rule.min_active_duration_seconds
+        )
+        return (
+            bool(min_active_duration_seconds)
+            and runtime.active_timestamp is not None
+            and now
+            < runtime.active_timestamp
+            + timedelta(seconds=min_active_duration_seconds)
+        )
+
+    @staticmethod
+    def _positive_seconds(value: int | None) -> int:
+        return max(0, int(value or 0))
 
     def last_alarm(self) -> dict[str, Any] | None:
         """Return the newest active alarm."""

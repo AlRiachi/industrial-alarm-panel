@@ -1,8 +1,10 @@
 import unittest
+from datetime import UTC, datetime, timedelta
 
 from custom_components.industrial_alarm_panel.alarm_models import (
     AlarmPriority,
     AlarmRule,
+    AlarmRuntimeState,
     AlarmValidationError,
 )
 
@@ -50,6 +52,20 @@ class AlarmModelTests(unittest.TestCase):
                     "condition": "above",
                 }
             )
+
+    def test_runtime_state_round_trips_pending_transition_timestamps(self) -> None:
+        pending_active = datetime(2026, 1, 1, tzinfo=UTC)
+        pending_clear = pending_active + timedelta(seconds=5)
+        state = AlarmRuntimeState(
+            rule_id="pump_fault",
+            pending_active_since=pending_active,
+            pending_clear_since=pending_clear,
+        )
+
+        loaded = AlarmRuntimeState.from_dict(state.to_dict())
+
+        self.assertEqual(loaded.pending_active_since, pending_active)
+        self.assertEqual(loaded.pending_clear_since, pending_clear)
 
 
 if __name__ == "__main__":
