@@ -5,13 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .alarm_models import AlarmPriority
-from .const import DOMAIN
 from .entity_base import IndustrialAlarmPanelEntity
+from .runtime import IndustrialAlarmConfigEntry
 
 
 class CountSensor(IndustrialAlarmPanelEntity, SensorEntity):
@@ -38,7 +37,20 @@ class CountSensor(IndustrialAlarmPanelEntity, SensorEntity):
 
 
 class TextSensor(IndustrialAlarmPanelEntity, SensorEntity):
-    """Text status sensor."""
+    """Text status sensor (last alarm / last event)."""
+
+    # Per-reading and per-event values are not worth recording in history.
+    _unrecorded_attributes = frozenset(
+        {
+            "last_value",
+            "last_source_state",
+            "source_value",
+            "source_state",
+            "timestamp",
+            "id",
+            "metadata",
+        }
+    )
 
     def __init__(self, runtime: Any, key: str, name: str, value_fn: Any) -> None:
         super().__init__(runtime, key, name)
@@ -64,12 +76,12 @@ class TextSensor(IndustrialAlarmPanelEntity, SensorEntity):
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: IndustrialAlarmConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up sensor entities."""
 
-    runtime = hass.data[DOMAIN][entry.entry_id]
+    runtime = entry.runtime_data
     engine = runtime.engine
     async_add_entities(
         [

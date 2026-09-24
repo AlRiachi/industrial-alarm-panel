@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime
+from functools import wraps
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -10,14 +13,53 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
-from .alarm_models import AlarmPriority
-from .const import DOMAIN
-from .rule_management import (
-    delete_rules,
-    matching_per_rule_entity_entries,
-    select_suggested_rules,
-)
+from .alarm_models import AlarmPriority, AlarmRuleNotFoundError, AlarmValidationError
+from .const import DOMAIN, EXPORT_HISTORY_MAX_ROWS, display_options
+from .rule_management import delete_rules, select_suggested_rules
 from .rule_suggestions import suggest_alarm_rules
+from .runtime import (
+    IntegrationNotLoadedError,
+    async_get_runtime,
+    remove_per_rule_entity_registry_entries,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+__all__ = ["async_register_websocket_api", "remove_per_rule_entity_registry_entries"]
+
+AsyncHandler = Callable[
+    [HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[None]
+]
+
+
+def handle_errors(func: AsyncHandler) -> AsyncHandler:
+    """Translate expected domain errors into websocket error replies.
+
+    - unknown rule / integration not loaded -> ``not_found``
+    - validation problems (bad rule data, bad timestamps) -> ``invalid_format``
+    """
+
+    @wraps(func)
+    async def wrapper(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict[str, Any],
+    ) -> None:
+        try:
+            await func(hass, connection, msg)
+        except (AlarmRuleNotFoundError, IntegrationNotLoadedError) as err:
+            connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, str(err))
+        except (AlarmValidationError, ValueError, vol.Invalid) as err:
+            connection.send_error(
+                msg["id"], websocket_api.ERR_INVALID_FORMAT, str(err)
+            )
+        except KeyError as err:
+            missing = err.args[0] if err.args else err
+            connection.send_error(
+                msg["id"], websocket_api.ERR_NOT_FOUND, f"Not found: {missing}"
+            )
+
+    return wrapper
 
 SUGGESTED_RULE_THRESHOLD_SCHEMA = {
     vol.Optional("power_threshold_w", default=2000): vol.All(
@@ -60,16 +102,19 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
 
 
 def _runtime(hass: HomeAssistant) -> Any:
-    for key, value in hass.data.get(DOMAIN, {}).items():
-        if key not in {"services_registered", "websocket_registered"}:
-            return value
-    raise RuntimeError("Industrial Alarm Panel is not configured")
+    return async_get_runtime(hass)
+
+
+def _operator(connection: websocket_api.ActiveConnection) -> str | None:
+    user = getattr(connection, "user", None)
+    return getattr(user, "id", None)
 
 
 @websocket_api.websocket_command(
     {vol.Required("type"): "industrial_alarm_panel/list_alarms"}
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_list_alarms(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -83,6 +128,7 @@ async def websocket_list_alarms(
         {
             "alarms": runtime.engine.list_alarms(include_normal=True),
             "sound": runtime.sound_manager.as_dict(),
+            "display": display_options(runtime.options),
         },
     )
 
@@ -100,6 +146,7 @@ async def websocket_list_alarms(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_list_history(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -124,6 +171,7 @@ async def websocket_list_history(
     {vol.Required("type"): "industrial_alarm_panel/list_rules"}
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_list_rules(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -138,10 +186,12 @@ async def websocket_list_rules(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {vol.Required("type"): "industrial_alarm_panel/create_rule", vol.Required("rule"): dict}
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_create_rule(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -150,9 +200,7 @@ async def websocket_create_rule(
     """Create an alarm rule."""
 
     runtime = _runtime(hass)
-    rule = await runtime.engine.create_rule(msg["rule"])
-    await runtime.rule_store.async_save_rules(runtime.engine.rules.values())
-    hass.async_create_task(hass.config_entries.async_reload(runtime.entry_id))
+    [rule] = await runtime.async_create_rules([msg["rule"]])
     connection.send_result(msg["id"], {"rule": rule.to_dict()})
 
 
@@ -163,6 +211,7 @@ async def websocket_create_rule(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_list_suggested_rules(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -183,6 +232,7 @@ async def websocket_list_suggested_rules(
     connection.send_result(msg["id"], {"suggested": suggested})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "industrial_alarm_panel/create_suggested_rules",
@@ -191,6 +241,7 @@ async def websocket_list_suggested_rules(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_create_suggested_rules(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -211,14 +262,7 @@ async def websocket_create_suggested_rules(
         suggested, msg.get("rule_ids")
     )
 
-    created = []
-    for rule_data in selected:
-        rule = await runtime.engine.create_rule(rule_data)
-        created.append(rule.to_dict())
-
-    if created:
-        await runtime.rule_store.async_save_rules(runtime.engine.rules.values())
-        hass.async_create_task(hass.config_entries.async_reload(runtime.entry_id))
+    created = [rule.to_dict() for rule in await runtime.async_create_rules(selected)]
 
     connection.send_result(
         msg["id"],
@@ -230,6 +274,7 @@ async def websocket_create_suggested_rules(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "industrial_alarm_panel/update_rule",
@@ -238,6 +283,7 @@ async def websocket_create_suggested_rules(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_update_rule(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -246,12 +292,13 @@ async def websocket_update_rule(
     """Update an alarm rule."""
 
     runtime = _runtime(hass)
-    rule = await runtime.engine.update_rule(msg["rule_id"], msg["changes"])
-    await runtime.rule_store.async_save_rules(runtime.engine.rules.values())
-    hass.async_create_task(hass.config_entries.async_reload(runtime.entry_id))
+    rule = await runtime.async_update_rule(
+        msg["rule_id"], msg["changes"], operator=_operator(connection)
+    )
     connection.send_result(msg["id"], {"rule": rule.to_dict()})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "industrial_alarm_panel/delete_rule",
@@ -259,6 +306,7 @@ async def websocket_update_rule(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_delete_rule(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -267,12 +315,13 @@ async def websocket_delete_rule(
     """Delete an alarm rule."""
 
     runtime = _runtime(hass)
-    await runtime.engine.delete_rule(msg["rule_id"])
-    await runtime.rule_store.async_save_rules(runtime.engine.rules.values())
-    hass.async_create_task(hass.config_entries.async_reload(runtime.entry_id))
-    connection.send_result(msg["id"], {"deleted": True})
+    removed_entity_ids = await runtime.async_delete_rule(msg["rule_id"])
+    connection.send_result(
+        msg["id"], {"deleted": True, "removed_entity_ids": removed_entity_ids}
+    )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "industrial_alarm_panel/delete_rules",
@@ -281,6 +330,7 @@ async def websocket_delete_rule(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_delete_rules(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -294,13 +344,11 @@ async def websocket_delete_rules(
         rule_ids=msg.get("rule_ids"),
         generated_only=msg["generated_only"],
     )
-    removed_entity_ids = remove_per_rule_entity_registry_entries(
-        hass, runtime.entry_id, result.deleted_rules
-    )
-
+    removed_entity_ids: list[str] = []
     if result.deleted_rules:
-        await runtime.rule_store.async_save_rules(runtime.engine.rules.values())
-        hass.async_create_task(hass.config_entries.async_reload(runtime.entry_id))
+        removed_entity_ids = await runtime.async_rules_changed(
+            removed=result.deleted_rules
+        )
 
     connection.send_result(
         msg["id"],
@@ -322,6 +370,7 @@ async def websocket_delete_rules(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_acknowledge(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -330,7 +379,7 @@ async def websocket_acknowledge(
     """Acknowledge one alarm."""
 
     await _runtime(hass).engine.acknowledge_alarm(
-        msg["rule_id"], operator=connection.user.id, comment=msg.get("comment")
+        msg["rule_id"], operator=_operator(connection), comment=msg.get("comment")
     )
     connection.send_result(msg["id"], {"acknowledged": True})
 
@@ -344,6 +393,7 @@ async def websocket_acknowledge(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_acknowledge_all(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -354,7 +404,7 @@ async def websocket_acknowledge_all(
     count = await _runtime(hass).engine.acknowledge_all(
         priority=msg.get("priority"),
         area=msg.get("area"),
-        operator=connection.user.id,
+        operator=_operator(connection),
         comment=msg.get("comment"),
     )
     connection.send_result(msg["id"], {"acknowledged": count})
@@ -367,6 +417,7 @@ async def websocket_acknowledge_all(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_silence(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -375,7 +426,7 @@ async def websocket_silence(
     """Silence horn."""
 
     await _runtime(hass).engine.silence_horn(
-        msg.get("duration_seconds"), operator=connection.user.id
+        msg.get("duration_seconds"), operator=_operator(connection)
     )
     connection.send_result(msg["id"], {"silenced": True})
 
@@ -389,6 +440,7 @@ async def websocket_silence(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_shelve(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -399,7 +451,7 @@ async def websocket_shelve(
     await _runtime(hass).engine.shelve_alarm(
         msg["rule_id"],
         duration_minutes=msg["duration_minutes"],
-        operator=connection.user.id,
+        operator=_operator(connection),
         comment=msg.get("comment"),
     )
     connection.send_result(msg["id"], {"shelved": True})
@@ -414,6 +466,7 @@ async def websocket_shelve(
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_test_sound(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -421,7 +474,9 @@ async def websocket_test_sound(
 ) -> None:
     """Test sound."""
 
-    await _runtime(hass).sound_manager.test_sound(AlarmPriority(msg["priority"]))
+    runtime = _runtime(hass)
+    await runtime.sound_manager.test_sound(AlarmPriority(msg["priority"]))
+    runtime.engine.notify_listeners()
     connection.send_result(msg["id"], {"played": True})
 
 
@@ -431,9 +486,13 @@ async def websocket_test_sound(
         vol.Optional("start_time"): str,
         vol.Optional("end_time"): str,
         vol.Optional("format", default="csv"): vol.In(["csv", "json"]),
+        vol.Optional("limit", default=EXPORT_HISTORY_MAX_ROWS): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=EXPORT_HISTORY_MAX_ROWS)
+        ),
     }
 )
 @websocket_api.async_response
+@handle_errors
 async def websocket_export_history(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -442,13 +501,20 @@ async def websocket_export_history(
     """Export history rows."""
 
     runtime = _runtime(hass)
+    limit = msg["limit"]
     events = await runtime.history_store.query_events(
+        limit=limit,
         start_time=_parse_datetime(msg.get("start_time")),
         end_time=_parse_datetime(msg.get("end_time")),
     )
     connection.send_result(
         msg["id"],
-        {"format": msg["format"], "rows": [event.to_dict() for event in events]},
+        {
+            "format": msg["format"],
+            "rows": [event.to_dict() for event in events],
+            "limit": limit,
+            "truncated": len(events) >= limit,
+        },
     )
 
 
@@ -479,25 +545,3 @@ def _sensor_states(hass: HomeAssistant) -> list[Any]:
             if (state := hass.states.get(entity_id)) is not None
         ]
     return []
-
-
-def remove_per_rule_entity_registry_entries(
-    hass: HomeAssistant, entry_id: str, rules: list[Any]
-) -> list[str]:
-    """Remove entity registry entries belonging to deleted per-rule entities."""
-
-    from homeassistant.helpers import entity_registry as er
-
-    entity_registry = er.async_get(hass)
-    entries_for_config_entry = getattr(er, "async_entries_for_config_entry", None)
-    if entries_for_config_entry is not None:
-        entries = entries_for_config_entry(entity_registry, entry_id)
-    else:
-        entries = entity_registry.entities.values()
-
-    matches = matching_per_rule_entity_entries(entry_id, rules, entries)
-    removed_entity_ids = [entry.entity_id for entry in matches]
-    for entity_id in removed_entity_ids:
-        entity_registry.async_remove(entity_id)
-
-    return removed_entity_ids

@@ -32,7 +32,7 @@ class FrontendEventTests(unittest.TestCase):
 
         self.assertEqual(
             hass.bus.events,
-            [(EVENT_ALARMS_UPDATED, {"entry_id": "entry-1"})],
+            [(EVENT_ALARMS_UPDATED, {"entry_id": "entry-1", "rule_ids": []})],
         )
 
         remove_listener()

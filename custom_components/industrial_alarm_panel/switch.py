@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, SOUND_MODE_NONE
+from .const import SOUND_MODE_NONE
 from .entity_base import IndustrialAlarmPanelEntity
+from .runtime import IndustrialAlarmConfigEntry
 
 
 class SoundEnabledSwitch(IndustrialAlarmPanelEntity, SwitchEntity):
@@ -46,10 +46,10 @@ class SoundEnabledSwitch(IndustrialAlarmPanelEntity, SwitchEntity):
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: IndustrialAlarmConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up switch entities."""
 
-    runtime = hass.data[DOMAIN][entry.entry_id]
+    runtime = entry.runtime_data
     async_add_entities([SoundEnabledSwitch(runtime)])

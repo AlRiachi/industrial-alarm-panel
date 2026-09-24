@@ -5,13 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.select import SelectEntity, SelectEntityDescription
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .alarm_models import AlarmPriority
-from .const import DOMAIN
 from .entity_base import IndustrialAlarmPanelEntity
+from .runtime import IndustrialAlarmConfigEntry
 
 
 class PriorityFilterSelect(IndustrialAlarmPanelEntity, SelectEntity):
@@ -37,10 +36,10 @@ class PriorityFilterSelect(IndustrialAlarmPanelEntity, SelectEntity):
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: IndustrialAlarmConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up select entities."""
 
-    runtime = hass.data[DOMAIN][entry.entry_id]
+    runtime = entry.runtime_data
     async_add_entities([PriorityFilterSelect(runtime)])

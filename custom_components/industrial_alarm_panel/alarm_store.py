@@ -3,15 +3,25 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import json
+import logging
 from pathlib import Path
 import sqlite3
 from typing import Any
 
 from .alarm_models import AlarmEvent, AlarmRule, AlarmRuntimeState
+
+_LOGGER = logging.getLogger(__name__)
+
+#: Runtime state is written at most once per this many seconds (debounced).
+STATE_SAVE_DELAY_SECONDS = 3
+#: How often history retention cleanup runs.
+RETENTION_INTERVAL = timedelta(days=1)
+
+SoundStateFn = Callable[[], dict[str, Any]]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS alarm_events (
@@ -285,6 +295,9 @@ class MemoryRuleStore:
     ) -> None:
         self._rules = {rule.id: rule for rule in rules or []}
         self._states = {state.rule_id: state for state in states or []}
+        self.sound_state: dict[str, Any] = {}
+        self.sound_state_fn: SoundStateFn | None = None
+        self.save_count = 0
 
     async def async_load_rules(self) -> list[AlarmRule]:
         """Load rules."""
@@ -306,17 +319,35 @@ class MemoryRuleStore:
     ) -> None:
         """Persist runtime states."""
 
+        self.save_count += 1
         self._states = dict(states)
+        if self.sound_state_fn is not None:
+            self.sound_state = self.sound_state_fn()
+
+    async def async_flush_states(
+        self, states: dict[str, AlarmRuntimeState]
+    ) -> None:
+        """Persist runtime states immediately."""
+
+        await self.async_save_states(states)
 
 
 class HomeAssistantRuleStore:
-    """Home Assistant storage helper wrapper."""
+    """Home Assistant storage helper wrapper.
+
+    Rule definitions are saved immediately (they change rarely). Runtime state is
+    saved with ``Store.async_delay_save`` so bursts of alarm transitions produce a
+    single write; ``async_flush_states`` forces a write on unload. Home Assistant
+    also flushes pending delayed writes on shutdown.
+    """
 
     def __init__(self, hass: Any, rules_key: str, state_key: str) -> None:
         from homeassistant.helpers.storage import Store
 
         self._rules_store = Store(hass, 1, rules_key, minor_version=0)
         self._state_store = Store(hass, 1, state_key, minor_version=0)
+        self.sound_state: dict[str, Any] = {}
+        self.sound_state_fn: SoundStateFn | None = None
 
     async def async_load_rules(self) -> list[AlarmRule]:
         """Load rule definitions from Home Assistant storage."""
@@ -335,23 +366,68 @@ class HomeAssistantRuleStore:
         """Load runtime state from Home Assistant storage."""
 
         data = await self._state_store.async_load() or {"states": {}}
+        self.sound_state = dict(data.get("sound") or {})
         return {
             rule_id: AlarmRuntimeState.from_dict({"rule_id": rule_id, **state})
             for rule_id, state in data.get("states", {}).items()
         }
 
+    def _state_data(self, states: dict[str, AlarmRuntimeState]) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "version": 1,
+            "minor_version": 0,
+            "states": {rule_id: state.to_dict() for rule_id, state in states.items()},
+        }
+        if self.sound_state_fn is not None:
+            data["sound"] = self.sound_state_fn()
+        return data
+
     async def async_save_states(
         self, states: dict[str, AlarmRuntimeState]
     ) -> None:
-        """Persist runtime state to Home Assistant storage."""
+        """Schedule a debounced write of runtime state.
 
-        await self._state_store.async_save(
-            {
-                "version": 1,
-                "minor_version": 0,
-                "states": {
-                    rule_id: state.to_dict()
-                    for rule_id, state in states.items()
-                },
-            }
+        The data is serialized when the write happens, so the latest state is
+        always stored.
+        """
+
+        self._state_store.async_delay_save(
+            lambda: self._state_data(states), STATE_SAVE_DELAY_SECONDS
         )
+
+    async def async_flush_states(
+        self, states: dict[str, AlarmRuntimeState]
+    ) -> None:
+        """Write runtime state immediately (used on unload)."""
+
+        await self._state_store.async_save(self._state_data(states))
+
+
+def schedule_history_retention(
+    hass: Any,
+    history_store: Any,
+    retention_days: int,
+    track_time_interval: Callable[..., Callable[[], None]],
+) -> Callable[[], None]:
+    """Run history retention cleanup now and then once per day.
+
+    Returns the unsubscribe callback of the daily timer.
+    """
+
+    async def _cleanup(_now: datetime | None = None) -> int:
+        try:
+            deleted = await history_store.cleanup_retention(int(retention_days))
+        except Exception:  # pragma: no cover - defensive around disk I/O
+            _LOGGER.exception("Alarm history retention cleanup failed")
+            return 0
+        if deleted:
+            _LOGGER.debug(
+                "Removed %s alarm history rows older than %s days",
+                deleted,
+                retention_days,
+            )
+        return deleted
+
+    remove = track_time_interval(hass, _cleanup, RETENTION_INTERVAL)
+    hass.async_create_task(_cleanup())
+    return remove

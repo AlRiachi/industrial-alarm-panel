@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .alarm_models import AlarmRule
 from .entity_base import IndustrialAlarmPanelEntity, PerAlarmEntity
+from .runtime import IndustrialAlarmConfigEntry
 
 
 class AlarmActionButton(IndustrialAlarmPanelEntity, ButtonEntity):
@@ -30,8 +30,17 @@ class AlarmActionButton(IndustrialAlarmPanelEntity, ButtonEntity):
 class PerAlarmButton(PerAlarmEntity, ButtonEntity):
     """Per-alarm action button."""
 
-    def __init__(self, runtime: Any, rule_id: str, action_key: str, name: str, action: Any) -> None:
+    def __init__(
+        self,
+        runtime: Any,
+        rule_id: str,
+        action_key: str,
+        name_template: str,
+        action: Any,
+    ) -> None:
+        name = name_template.format(name=runtime.engine.rules[rule_id].name)
         super().__init__(runtime, rule_id, action_key, name)
+        self._name_template = name_template
         self.entity_description = ButtonEntityDescription(key=action_key, name=name)
         self._attr_suggested_object_id = f"industrial_alarm_{action_key}"
         self._action = action
@@ -44,12 +53,12 @@ class PerAlarmButton(PerAlarmEntity, ButtonEntity):
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: IndustrialAlarmConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up button entities."""
 
-    runtime = hass.data[DOMAIN][entry.entry_id]
+    runtime = entry.runtime_data
     engine = runtime.engine
 
     async def _test_sound() -> None:
@@ -82,32 +91,34 @@ async def async_setup_entry(
             _test_sound,
         ),
     ]
-    for rule_id, rule in engine.rules.items():
-        entities.extend(
-            [
-                PerAlarmButton(
-                    runtime,
-                    rule_id,
-                    f"ack_{rule.slug}",
-                    f"Acknowledge {rule.name}",
-                    lambda rid: engine.acknowledge_alarm(rid, operator="entity"),
-                ),
-                PerAlarmButton(
-                    runtime,
-                    rule_id,
-                    f"shelve_{rule.slug}",
-                    f"Shelve {rule.name}",
-                    lambda rid: engine.shelve_alarm(
-                        rid, duration_minutes=60, operator="entity"
-                    ),
-                ),
-                PerAlarmButton(
-                    runtime,
-                    rule_id,
-                    f"disable_{rule.slug}",
-                    f"Disable {rule.name}",
-                    lambda rid: engine.disable_alarm(rid, operator="entity"),
-                ),
-            ]
-        )
     async_add_entities(entities)
+
+    def _rule_entities(rule: AlarmRule) -> list[ButtonEntity]:
+        return [
+            PerAlarmButton(
+                runtime,
+                rule.id,
+                f"ack_{rule.slug}",
+                "Acknowledge {name}",
+                lambda rid: engine.acknowledge_alarm(rid, operator="entity"),
+            ),
+            PerAlarmButton(
+                runtime,
+                rule.id,
+                f"shelve_{rule.slug}",
+                "Shelve {name}",
+                lambda rid: engine.shelve_alarm(
+                    rid, duration_minutes=60, operator="entity"
+                ),
+            ),
+            PerAlarmButton(
+                runtime,
+                rule.id,
+                f"disable_{rule.slug}",
+                "Disable {name}",
+                lambda rid: engine.disable_alarm(rid, operator="entity"),
+            ),
+        ]
+
+    # Also adds the current per-rule buttons; later rules are added in place.
+    runtime.register_rule_entity_platform(async_add_entities, _rule_entities)

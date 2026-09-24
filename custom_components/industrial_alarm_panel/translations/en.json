@@ -22,7 +22,222 @@
   "options": {
     "step": {
       "init": {
-        "title": "Industrial Alarm Panel options"
+        "title": "Industrial Alarm Panel options",
+        "data": {
+          "max_active_alarms": "Max active alarms shown",
+          "max_history_rows": "Max history rows shown",
+          "history_retention_days": "History retention days",
+          "store_status_changes": "Store status changes",
+          "store_normal_events": "Store normal events",
+          "auto_hide_cleared_acknowledged": "Auto-hide cleared acknowledged alarms",
+          "show_cleared_unacknowledged": "Show cleared unacknowledged alarms",
+          "require_acknowledgement_for_cleared": "Require acknowledgement for cleared alarms",
+          "sound_mode": "Sound mode",
+          "media_players": "Selected media players",
+          "media_sound_url": "Media sound URL",
+          "repeat_until_silenced": "Repeat until silenced",
+          "repeat_interval_seconds": "Repeat interval seconds",
+          "default_delay_on_seconds": "Default delay ON",
+          "default_delay_off_seconds": "Default delay OFF",
+          "default_deadband": "Default deadband",
+          "alarm_flood_threshold": "Alarm flood threshold",
+          "alarm_flood_window_seconds": "Alarm flood window seconds",
+          "auto_shelve_flapping_alarms": "Auto-shelve flapping alarms",
+          "flapping_detection_threshold": "Flapping detection threshold",
+          "panel_title": "Panel title",
+          "default_tab": "Default tab",
+          "enable_flashing": "Enable flashing",
+          "enable_compact_mode": "Enable compact mode",
+          "group_by": "Group by"
+        },
+        "data_description": {
+          "media_sound_url": "URL played on the selected media players, e.g. /local/alarms/[priority].mp3. [priority] is replaced by critical, high, medium, low, info or status. No audio files are shipped: place your own files in /config/www/ (served as /local/). Leave empty to disable media player sound.",
+          "max_active_alarms": "Display limit for the panel's active alarm list.",
+          "max_history_rows": "Display page size for the panel's history list; stored history is pruned by retention days.",
+          "history_retention_days": "Alarm history older than this is deleted by a daily cleanup.",
+          "store_normal_events": "Also record a history row for every source value change that does not change the alarm state (can be noisy).",
+          "repeat_until_silenced": "Re-play the media player sound every repeat interval until the horn is silenced or all alarms are acknowledged.",
+          "default_delay_on_seconds": "Applied to new rules that do not specify an ON delay.",
+          "default_delay_off_seconds": "Applied to new rules that do not specify an OFF delay.",
+          "default_deadband": "Applied to new rules that do not specify a deadband.",
+          "flapping_detection_threshold": "Activations within 5 minutes that mark an alarm as flapping."
+        }
+      }
+    }
+  },
+  "issues": {
+    "missing_media_player": {
+      "title": "Alarm media player is missing",
+      "description": "The configured media player `{entity_id}` does not exist."
+    },
+    "missing_source_entity": {
+      "title": "Alarm source entity is missing",
+      "description": "Rule `{rule_id}` references `{entity_id}`, but that entity does not exist."
+    }
+  },
+  "services": {
+    "acknowledge_alarm": {
+      "name": "Acknowledge alarm",
+      "description": "Acknowledge a single alarm without shelving or disabling it.",
+      "fields": {
+        "rule_id": {
+          "name": "Rule ID",
+          "description": "ID of the alarm rule."
+        },
+        "comment": {
+          "name": "Comment",
+          "description": "Optional operator comment stored in history."
+        }
+      }
+    },
+    "acknowledge_all": {
+      "name": "Acknowledge all alarms",
+      "description": "Acknowledge all visible alarms, optionally filtered by priority or area.",
+      "fields": {
+        "priority": {
+          "name": "Priority",
+          "description": "Alarm priority."
+        },
+        "area": {
+          "name": "Area",
+          "description": "Only alarms in this area."
+        },
+        "comment": {
+          "name": "Comment",
+          "description": "Optional operator comment stored in history."
+        }
+      }
+    },
+    "silence_horn": {
+      "name": "Silence horn",
+      "description": "Stop alarm sound without acknowledging active alarms.",
+      "fields": {
+        "duration_seconds": {
+          "name": "Duration",
+          "description": "Silence for this many seconds; omit to silence until the next new alarm."
+        }
+      }
+    },
+    "unsilence_horn": {
+      "name": "Unsilence horn",
+      "description": "Re-enable horn output for currently audible alarms."
+    },
+    "shelve_alarm": {
+      "name": "Shelve alarm",
+      "description": "Temporarily suppress an alarm rule; it unshelves automatically when the duration expires.",
+      "fields": {
+        "rule_id": {
+          "name": "Rule ID",
+          "description": "ID of the alarm rule."
+        },
+        "duration_minutes": {
+          "name": "Duration",
+          "description": "Shelve for this many minutes."
+        },
+        "comment": {
+          "name": "Comment",
+          "description": "Optional operator comment stored in history."
+        }
+      }
+    },
+    "unshelve_alarm": {
+      "name": "Unshelve alarm",
+      "description": "Return a shelved alarm to service and re-evaluate its source.",
+      "fields": {
+        "rule_id": {
+          "name": "Rule ID",
+          "description": "ID of the alarm rule."
+        }
+      }
+    },
+    "disable_alarm": {
+      "name": "Disable alarm",
+      "description": "Disable an alarm rule.",
+      "fields": {
+        "rule_id": {
+          "name": "Rule ID",
+          "description": "ID of the alarm rule."
+        },
+        "comment": {
+          "name": "Comment",
+          "description": "Optional operator comment stored in history."
+        }
+      }
+    },
+    "enable_alarm": {
+      "name": "Enable alarm",
+      "description": "Enable a disabled alarm rule and re-evaluate its source.",
+      "fields": {
+        "rule_id": {
+          "name": "Rule ID",
+          "description": "ID of the alarm rule."
+        }
+      }
+    },
+    "create_rule": {
+      "name": "Create rule",
+      "description": "Create an alarm rule (admin only when called by a user).",
+      "fields": {
+        "rule": {
+          "name": "Rule",
+          "description": "Alarm rule definition."
+        }
+      }
+    },
+    "update_rule": {
+      "name": "Update rule",
+      "description": "Update an alarm rule (admin only when called by a user).",
+      "fields": {
+        "rule_id": {
+          "name": "Rule ID",
+          "description": "ID of the alarm rule."
+        },
+        "changes": {
+          "name": "Changes",
+          "description": "Rule fields to change."
+        }
+      }
+    },
+    "delete_rule": {
+      "name": "Delete rule",
+      "description": "Delete an alarm rule and its entities (admin only when called by a user).",
+      "fields": {
+        "rule_id": {
+          "name": "Rule ID",
+          "description": "ID of the alarm rule."
+        }
+      }
+    },
+    "test_sound": {
+      "name": "Test sound",
+      "description": "Play a one-shot test sound.",
+      "fields": {
+        "priority": {
+          "name": "Priority",
+          "description": "Alarm priority."
+        }
+      }
+    },
+    "export_history": {
+      "name": "Export history",
+      "description": "Return alarm history rows (capped by limit).",
+      "fields": {
+        "start_time": {
+          "name": "Start time",
+          "description": "ISO 8601 start time."
+        },
+        "end_time": {
+          "name": "End time",
+          "description": "ISO 8601 end time."
+        },
+        "format": {
+          "name": "Format",
+          "description": "csv or json."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of rows (1-10000)."
+        }
       }
     }
   }

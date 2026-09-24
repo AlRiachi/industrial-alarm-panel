@@ -19,7 +19,7 @@ except ModuleNotFoundError:  # Allows pure unit tests without Home Assistant ins
 
 DOMAIN = "industrial_alarm_panel"
 NAME = "Industrial Alarm Panel"
-VERSION = "1.0.13"
+VERSION = "1.1.0"
 EVENT_ALARMS_UPDATED = f"{DOMAIN}_alarms_updated"
 
 PLATFORMS: list[Platform] = [
@@ -83,6 +83,10 @@ CONF_ALARM_FLOOD_WINDOW_SECONDS = "alarm_flood_window_seconds"
 CONF_AUTO_SHELVE_FLAPPING = "auto_shelve_flapping_alarms"
 CONF_FLAPPING_DETECTION_THRESHOLD = "flapping_detection_threshold"
 CONF_GROUP_BY = "group_by"
+CONF_MEDIA_SOUND_URL = "media_sound_url"
+
+#: Hard cap for history exports (websocket and service).
+EXPORT_HISTORY_MAX_ROWS = 10000
 
 SOUND_MODE_NONE = "none"
 SOUND_MODE_BROWSER_ONLY = "browser_only"
@@ -106,6 +110,7 @@ DEFAULT_OPTIONS = {
     CONF_REQUIRE_ACK_CLEARED: True,
     CONF_SOUND_MODE: SOUND_MODE_BROWSER_ONLY,
     CONF_MEDIA_PLAYERS: [],
+    CONF_MEDIA_SOUND_URL: "",
     CONF_REPEAT_UNTIL_SILENCED: True,
     CONF_REPEAT_INTERVAL_SECONDS: 30,
     CONF_DEFAULT_DELAY_ON: 0,
@@ -131,3 +136,24 @@ DEFAULT_DATA = {
     CONF_MAX_ACTIVE_ALARMS: DEFAULT_OPTIONS[CONF_MAX_ACTIVE_ALARMS],
     CONF_MAX_HISTORY_ROWS: DEFAULT_OPTIONS[CONF_MAX_HISTORY_ROWS],
 }
+
+#: Options that only affect presentation; returned to the panel as ``display``.
+DISPLAY_OPTION_KEYS = (
+    CONF_PANEL_TITLE,
+    CONF_DEFAULT_TAB,
+    CONF_ENABLE_FLASHING,
+    CONF_COMPACT_MODE,
+    CONF_GROUP_BY,
+    CONF_MAX_ACTIVE_ALARMS,
+    CONF_MAX_HISTORY_ROWS,
+    CONF_AUTO_HIDE_CLEARED_ACK,
+    CONF_SHOW_CLEARED_UNACK,
+    CONF_REQUIRE_ACK_CLEARED,
+)
+
+
+def display_options(options: dict) -> dict:
+    """Return the panel display settings from merged entry data/options."""
+
+    merged = {**DEFAULT_OPTIONS, **(options or {})}
+    return {key: merged.get(key) for key in DISPLAY_OPTION_KEYS}

@@ -8,13 +8,15 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorEntityDescription,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .alarm_models import AlarmLifecycleState
-from .const import DOMAIN
+from .alarm_models import AlarmLifecycleState, AlarmRule
 from .entity_base import IndustrialAlarmPanelEntity, PerAlarmEntity
+from .runtime import IndustrialAlarmConfigEntry
+
+#: Attributes that change with source readings; kept out of the recorder.
+ALARM_UNRECORDED_ATTRIBUTES = frozenset({"last_value", "last_source_state"})
 
 
 class GlobalBinarySensor(IndustrialAlarmPanelEntity, BinarySensorEntity):
@@ -35,6 +37,8 @@ class GlobalBinarySensor(IndustrialAlarmPanelEntity, BinarySensorEntity):
 class AlarmRuleBinarySensor(PerAlarmEntity, BinarySensorEntity):
     """Per-alarm binary sensor."""
 
+    _unrecorded_attributes = ALARM_UNRECORDED_ATTRIBUTES
+
     def __init__(self, runtime: Any, rule_id: str) -> None:
         super().__init__(
             runtime,
@@ -51,31 +55,35 @@ class AlarmRuleBinarySensor(PerAlarmEntity, BinarySensorEntity):
     def is_on(self) -> bool:
         """Return whether alarm is active."""
 
-        return self.runtime_state.is_active
+        runtime_state = self.runtime_state
+        return bool(runtime_state and runtime_state.is_active)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return DCS alarm attributes."""
 
-        return self.engine.alarm_to_dict(self.rule, self.runtime_state)
+        rule, runtime_state = self.rule, self.runtime_state
+        if rule is None or runtime_state is None:
+            return {}
+        return self.engine.alarm_to_dict(rule, runtime_state)
 
     @property
     def available(self) -> bool:
         """Return availability."""
 
-        return self.runtime_state.lifecycle_state not in {
+        return super().available and self.runtime_state.lifecycle_state not in {
             AlarmLifecycleState.OUT_OF_SERVICE,
         }
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: IndustrialAlarmConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up binary sensor entities."""
 
-    runtime = hass.data[DOMAIN][entry.entry_id]
+    runtime = entry.runtime_data
     engine = runtime.engine
     entities: list[BinarySensorEntity] = [
         GlobalBinarySensor(runtime, "any_active", "Any Active", engine.active_count),
@@ -92,5 +100,10 @@ async def async_setup_entry(
             lambda: runtime.sound_manager.horn_active,
         ),
     ]
-    entities.extend(AlarmRuleBinarySensor(runtime, rule_id) for rule_id in engine.rules)
     async_add_entities(entities)
+
+    def _rule_entities(rule: AlarmRule) -> list[BinarySensorEntity]:
+        return [AlarmRuleBinarySensor(runtime, rule.id)]
+
+    # Also adds the current per-rule entities; later rules are added in place.
+    runtime.register_rule_entity_platform(async_add_entities, _rule_entities)

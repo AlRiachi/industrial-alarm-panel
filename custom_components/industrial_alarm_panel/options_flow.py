@@ -26,6 +26,7 @@ from .const import (
     CONF_MAX_ACTIVE_ALARMS,
     CONF_MAX_HISTORY_ROWS,
     CONF_MEDIA_PLAYERS,
+    CONF_MEDIA_SOUND_URL,
     CONF_PANEL_TITLE,
     CONF_REPEAT_INTERVAL_SECONDS,
     CONF_REPEAT_UNTIL_SILENCED,
@@ -103,6 +104,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Optional(
                         CONF_MEDIA_PLAYERS,
                         default=",".join(options[CONF_MEDIA_PLAYERS]),
+                    ): str,
+                    vol.Optional(
+                        CONF_MEDIA_SOUND_URL,
+                        default=options.get(CONF_MEDIA_SOUND_URL) or "",
                     ): str,
                     vol.Optional(
                         CONF_REPEAT_UNTIL_SILENCED,

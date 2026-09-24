@@ -13,6 +13,17 @@ class AlarmValidationError(ValueError):
     """Raised when an alarm rule is invalid."""
 
 
+class AlarmRuleNotFoundError(KeyError):
+    """Raised when an alarm rule ID does not exist."""
+
+    def __init__(self, rule_id: str) -> None:
+        super().__init__(rule_id)
+        self.rule_id = rule_id
+
+    def __str__(self) -> str:
+        return f"Unknown alarm rule: {self.rule_id}"
+
+
 class AlarmPriority(StrEnum):
     """DCS alarm priority levels."""
 

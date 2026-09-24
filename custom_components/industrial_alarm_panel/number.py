@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberEntityDescription
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_HISTORY_RETENTION_DAYS, DEFAULT_OPTIONS, DOMAIN
+from .const import CONF_HISTORY_RETENTION_DAYS, DEFAULT_OPTIONS
 from .entity_base import IndustrialAlarmPanelEntity
+from .runtime import IndustrialAlarmConfigEntry
 
 
 class RetentionDaysNumber(IndustrialAlarmPanelEntity, NumberEntity):
@@ -22,7 +22,7 @@ class RetentionDaysNumber(IndustrialAlarmPanelEntity, NumberEntity):
     _attr_native_step = 1
     _attr_native_unit_of_measurement = UnitOfTime.DAYS
 
-    def __init__(self, runtime: Any, entry: ConfigEntry) -> None:
+    def __init__(self, runtime: Any, entry: IndustrialAlarmConfigEntry) -> None:
         super().__init__(runtime, "history_retention_days", "History Retention Days")
         self.entry = entry
         self.entity_description = NumberEntityDescription(
@@ -50,16 +50,16 @@ class RetentionDaysNumber(IndustrialAlarmPanelEntity, NumberEntity):
 
         options = dict(self.entry.options)
         options[CONF_HISTORY_RETENTION_DAYS] = int(value)
+        # The entry's update listener reloads the integration with the new value.
         self.hass.config_entries.async_update_entry(self.entry, options=options)
-        await self.hass.config_entries.async_reload(self.entry.entry_id)
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: IndustrialAlarmConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up number entities."""
 
-    runtime = hass.data[DOMAIN][entry.entry_id]
+    runtime = entry.runtime_data
     async_add_entities([RetentionDaysNumber(runtime, entry)])

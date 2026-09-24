@@ -11,7 +11,8 @@ from .const import DOMAIN
 async def async_create_repair_issues(hass: HomeAssistant, entry_id: str) -> None:
     """Create basic repair warnings for invalid runtime configuration."""
 
-    runtime = hass.data[DOMAIN].get(entry_id)
+    entry = hass.config_entries.async_get_entry(entry_id)
+    runtime = getattr(entry, "runtime_data", None) if entry else None
     if runtime is None:
         return
 

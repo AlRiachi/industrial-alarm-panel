@@ -257,20 +257,29 @@ class AlarmEngineTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         engine = AlarmEngine([rule], self.history, now=self.clock.now)
-        notifications = 0
+        per_rule_notifications = 0
+        global_notifications = 0
 
         def removed_entity_listener() -> None:
-            nonlocal notifications
-            notifications += 1
+            nonlocal per_rule_notifications
+            per_rule_notifications += 1
             engine.get_alarm("delete_me")
 
-        engine.add_listener(removed_entity_listener)
+        def global_listener() -> None:
+            nonlocal global_notifications
+            global_notifications += 1
+
+        engine.add_rule_listener("delete_me", removed_entity_listener)
+        engine.add_listener(global_listener)
 
         await engine.delete_rule("delete_me")
 
         self.assertNotIn("delete_me", engine.rules)
         self.assertNotIn("delete_me", engine.states)
-        self.assertEqual(notifications, 0)
+        self.assertEqual(per_rule_notifications, 0)
+        # Deletion is a real change: global listeners (panel event) are told.
+        self.assertEqual(global_notifications, 1)
+        self.assertEqual(engine.last_changed_rule_ids, ["delete_me"])
 
     async def test_engine_can_notify_entities_after_external_sound_state_change(self) -> None:
         engine = AlarmEngine([], self.history, now=self.clock.now)
