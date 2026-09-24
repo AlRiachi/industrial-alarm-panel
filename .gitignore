@@ -12,3 +12,6 @@ htmlcov/
 /dist/
 node_modules/
 .worktrees/
+
+# Impeccable working files (mocks, review captures, decision payloads)
+.impeccable/

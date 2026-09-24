@@ -9,19 +9,57 @@ Industrial Alarm Panel is a Home Assistant custom integration that provides a DC
 
 It creates Home Assistant entities, exposes services and a websocket API, persists alarm rules and runtime state, stores alarm history in SQLite, and serves a dedicated sidebar panel at `/industrial-alarms`.
 
-![Industrial Alarm Panel preview](docs/images/industrial-alarm-panel-preview.png)
+![Industrial Alarm Panel on a desktop browser](docs/images/industrial-alarm-panel-preview.png)
+
+<img src="docs/images/industrial-alarm-panel-phone.png" alt="Industrial Alarm Panel on a phone" width="260" align="right">
 
 ## Highlights
 
-- Dedicated Home Assistant sidebar panel at `/industrial-alarms`
-- DCS-style alarm lifecycle: active, acknowledged, cleared, shelved, disabled
-- Priority levels with horn behavior: `critical`, `high`, `medium`, `low`, `info`, `status`
-- Per-rule binary sensors and operator action buttons
-- Rule storage, runtime state persistence, and SQLite alarm history
+- Dedicated Home Assistant sidebar panel at `/industrial-alarms`, designed like a cockpit alerting display: master WARN/CAUT keys, a priority-ranked alarm stack and a status page per alarm
+- ISA-18.2 alarm lifecycle: active, acknowledged, cleared, shelved, disabled
+- ISA-101 display rules: colour only for abnormal states, priority shown by shape, number and colour so it reads for colour-blind operators
+- Priorities with horn behaviour: `critical`, `high`, `medium`, `low`, `info`, `status`
+- Works on a desktop, a phone (one-tap ACK / ACK ALL) and a wall tablet
+- Rule editor in the panel: create, edit, clone, enable/disable and delete rules, plus a suggested-rule generator for power, voltage and solar-water sensors
+- History with filters and CSV export
+- Per-rule binary sensors and operator action buttons, created and removed without reloading the integration
+- Rule storage, runtime state persistence and SQLite alarm history with daily retention cleanup
 - Browser horn and optional media-player sound output
-- Suggested alarm rule generator for PowerTag/electrical/solar-water sensors
-- Event-driven panel refresh with a polling fallback
 - HACS-ready repository layout with local Home Assistant brand images
+
+<br clear="right">
+
+## What's New in v1.1.0
+
+A redesigned panel and a hardened alarm engine. After upgrading, restart Home Assistant and hard refresh the browser (`Ctrl+Shift+R`).
+
+**New panel**
+
+- New crew-alerting layout: MASTER WARN and MASTER CAUT keys light while alarms of that priority are active and flash while any is unacknowledged. Press one to acknowledge those alarms (MASTER WARN also silences the horn).
+- Priority glyphs combine shape, number and colour: ◆1 critical, ▲2 high, ■3 medium, ●4 low, ○5 info, ⬡6 status. The glyph also shows the state: filled = active, hollow = cleared but unacknowledged, struck through = shelved, dashed = disabled.
+- Each alarm has a status page: live value, a 6-hour trend against the limit, the rule, instructions, a timeline, ACK, DISABLE/ENABLE, one-tap shelve presets (1 hour to 7 days) and UNSHELVE.
+- Phone layout: the top unacknowledged alarm shows first with large ACK and ACK ALL buttons, and tapping a row unfolds its status page in place.
+- Rules page: a board with one tile per rule that lights while in alarm, a list view for bulk selection and deletion, and a full rule editor (edit, clone, enable/disable, delete).
+- History page: filter by event type, priority and time range, search, and export to CSV.
+- SYS page: sound status, TEST HORN, compact rows, flashing on/off, keyboard shortcuts (↑/↓ to move, A to acknowledge, S to silence).
+- Only unacknowledged alarms flash (1 Hz). With reduced motion enabled they show a steady marker instead.
+- The panel bundles the B612 cockpit typeface (SIL Open Font License), so it works without internet access.
+- Faster panel: it no longer redraws everything on each update, the search box keeps focus while alarms update, and the browser horn beeps on a steady interval.
+
+**Engine and security fixes**
+
+- Creating, editing and deleting rules now requires a Home Assistant administrator, in the panel, over the websocket API and through the `create_rule`, `update_rule` and `delete_rule` services. Operators can still acknowledge, shelve and silence.
+- Sensor readings that do not change an alarm no longer rewrite the storage file or update every entity. Storage writes are debounced, which saves SD-card wear.
+- Shelved alarms now return on time even when their sensor stops reporting.
+- A sensor going `unavailable` or `unknown` no longer clears an active above/below alarm.
+- Fast-changing attributes are excluded from the recorder database.
+- History older than **History retention days** is cleaned up daily. Exports are capped at 10,000 rows.
+- Timed silence ends on schedule, **Repeat until silenced** now repeats media-player sound, and flapping alarms that get auto-shelved no longer sound the horn.
+- Rules are checked against their sensors' current values at startup, and the horn state survives restarts.
+- Adding, editing or deleting a rule no longer reloads the whole integration.
+- Clear error messages for invalid rules and unknown alarm IDs.
+- New **Media sound URL** option replaces the hard-coded MP3 path (see [Sound](#sound)).
+- The options and setup screens now have proper English labels.
 
 ## What's New in v1.0.13
 
@@ -112,28 +150,40 @@ Global entities include:
 - `select.industrial_alarm_panel_filter_priority`
 - `number.industrial_alarm_panel_history_retention_days`
 
-Every stored rule also gets a binary alarm sensor and action buttons after the integration reloads.
+Every stored rule also gets a binary alarm sensor and action buttons. They are created, updated and removed as soon as the rule changes, without reloading the integration.
+
+## Using the Panel
+
+The panel has seven pages: **ALERTS** (active and cleared-unacknowledged alarms), **UNACK**, **HISTORY**, **SHELVED**, **DISABLED**, **RULES** and **SYS**.
+
+- **Master strip:** MASTER WARN (critical) and MASTER CAUT (high and medium) light while alarms of that priority are active and flash while any is unacknowledged. Pressing MASTER WARN acknowledges critical alarms and silences the horn; MASTER CAUT acknowledges high and medium alarms. The horn block shows whether the horn is sounding and has SILENCE. ACK ALL acknowledges everything.
+- **Priority key:** ◆1 critical, ▲2 high, ■3 medium, ●4 low, ○5 info, ⬡6 status.
+- **State marks:** filled glyph = active, hollow = cleared but not yet acknowledged, struck through = shelved, dashed = disabled.
+- **Status page:** select an alarm to see its value, 6-hour trend, rule, instructions and actions. Shelve presets are 1 hour, 4 hours, 8 hours, 1 day, 3 days and 7 days.
+- **Phone:** the top unacknowledged alarm is shown first with ACK and ACK ALL, and tapping a row unfolds its status page.
+- **Keyboard:** ↑/↓ moves through alarms, A acknowledges the selected alarm, S silences the horn.
+- **Browser sound:** browsers only play sound after you interact with the page. Press **ENABLE SOUND** in the horn block (or **TEST HORN** on the SYS page) once on every screen that should sound.
 
 ## Rule Creation
 
-Create and manage rules from **Developer Tools > Services**, automations, scripts, or the panel's rule editor.
+Create and manage rules from the panel's **RULES** page, **Developer Tools > Actions**, automations, or scripts. Creating, editing and deleting rules requires a Home Assistant administrator account.
 
 Rules use stable Home Assistant `entity_id` values. For numeric range alarms, create two rules: one `below` rule and one `above` rule.
 
 ### Suggested Rules
 
-Open **Industrial Alarms > Rules > Suggested Rules** and click **Preview Suggested Rules** to scan current Home Assistant `sensor.*` entities before creating anything. Select the suggestions you want, then click **Create Selected**. **Create All** is still available after preview, but it asks for confirmation and shows the estimated Home Assistant entity count.
+Open **Industrial Alarms > RULES > SUGGEST RULES** and click **PREVIEW SUGGESTED RULES** to scan current Home Assistant `sensor.*` entities before creating anything. Select the suggestions you want, then click **CREATE SELECTED**. **CREATE ALL** is also available after the preview. Both ask for confirmation and show the estimated Home Assistant entity count.
 
 Default suggested thresholds:
 
-- `High W`: `2000 W` for power/high-consumption sensors
-- `Low V`: `207 V`
-- `High V`: `253 V`
-- `Solar C`: `75 C` for solar water/tank/boiler temperature sensors
+- **High power W**: `2000 W` for power/high-consumption sensors
+- **Low voltage V**: `207 V`
+- **High voltage V**: `253 V`
+- **Solar water °C**: `75 °C` for solar water/tank/boiler temperature sensors
 
 The generator detects candidates from `device_class`, unit of measurement, entity ID, and friendly name. It skips generated rule IDs that already exist so repeated previews or creates do not duplicate rules. Generated suggested rules use IDs beginning with `auto_`.
 
-If too many suggested rules were created, use **Remove Auto-Generated Rules** in the same section. It removes stored `auto_` rules and the per-rule alarm/button entities created by this integration, but it does not remove the original source sensors. For manual cleanup, select rows in the Rules table and click **Delete Selected**.
+If too many suggested rules were created, switch the RULES page to **LIST** and use **REMOVE AUTO-GENERATED**. It removes stored `auto_` rules and the per-rule alarm/button entities created by this integration, but it does not remove the original source sensors. For manual cleanup, tick rows in the list and click **DELETE SELECTED**.
 
 ### Rule Fields
 
@@ -269,31 +319,37 @@ The integration registers:
 - `industrial_alarm_panel.test_sound`
 - `industrial_alarm_panel.export_history`
 
+`create_rule`, `update_rule` and `delete_rule` require an administrator when called by a user. Automations and scripts can still call them.
+
 Silence only stops horn output. Acknowledgement changes the alarm lifecycle state.
-Shelving is temporary. In the panel, choose a **Shelve for** preset before clicking a row's **Shelve** button. In service calls, set `duration_minutes`; day-based shelves use minute values such as `1440` for 1 day and `10080` for 7 days.
+Shelving is temporary and ends on time, even if the source sensor stops reporting. In the panel, press a shelve preset on the alarm's status page. In service calls, set `duration_minutes`; day-based shelves use minute values such as `1440` for 1 day and `10080` for 7 days.
+
+`export_history` returns at most 10,000 rows; pass `limit` to return fewer.
 
 ## Sound
 
-Browser sound is generated in the panel with Web Audio after the operator clicks **Enable Alarm Sound**. Media-player output uses Home Assistant `media_player.play_media` with files expected at:
+Browser sound is generated in the panel with Web Audio after the operator presses **ENABLE SOUND** (or **TEST HORN**). Browsers block audio until you interact with the page, so do this once on each screen that should sound.
 
-```text
-/config/www/industrial_alarm_panel/sounds/
-```
+Media-player output uses Home Assistant `media_player.play_media`. No audio files are shipped with the integration:
 
-Default filenames are `critical.mp3`, `high.mp3`, `medium.mp3`, `low.mp3`, and `info.mp3`.
+1. Put your own files in `/config/www/` (served as `/local/`), for example `/config/www/alarms/critical.mp3`.
+2. In the integration options, set **Media sound URL**, for example `/local/alarms/[priority].mp3`. `[priority]` is replaced by `critical`, `high`, `medium`, `low`, `info` or `status`.
+3. Choose the media players under **Selected media players**.
+
+Leave **Media sound URL** empty to use browser sound only. With **Repeat until silenced** on, media players replay the sound every **Repeat interval seconds** until the horn is silenced. A timed silence ends on schedule.
 
 ## Storage
 
 Rules are stored in Home Assistant storage with key `industrial_alarm_panel.rules`.
 Runtime alarm states are stored with key `industrial_alarm_panel.state`.
-History is stored in `/config/industrial_alarm_panel_history.db`.
+History is stored in `/config/industrial_alarm_panel_history.db`. Events older than **History retention days** are deleted once a day. Storage writes are debounced by a few seconds and flushed when Home Assistant stops.
 
 ## Troubleshooting
 
 - If `/industrial-alarms` is blank after an update, restart Home Assistant and hard refresh the browser with `Ctrl+Shift+R`.
-- If a newly created rule does not show as an entity yet, wait for the integration reload to finish or restart Home Assistant.
-- If the horn does not play in the browser, click **Enable Alarm Sound** in the panel. Browsers block audio until a user gesture.
-- If media-player sound does not play, confirm your MP3 files exist under `/config/www/industrial_alarm_panel/sounds/`.
+- If you cannot create, edit or delete rules, sign in with an administrator account. Operators can acknowledge, shelve and silence only.
+- If the horn does not play in the browser, press **ENABLE SOUND** in the panel. Browsers block audio until a user gesture.
+- If media-player sound does not play, check that **Media sound URL** is set and that the file opens in a browser at that URL.
 - Check **Settings > System > Logs** for `industrial_alarm_panel` errors.
 
 ## Reporting Issues
@@ -327,9 +383,11 @@ Security issues should not be reported in public issues. See [SECURITY.md](SECUR
 Pull requests are welcome. Keep changes focused, include tests for behavioral changes, and run:
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m pytest -q
 node --check custom_components/industrial_alarm_panel/frontend/dist/industrial-alarm-panel.js
 ```
+
+The panel is a single dependency-free custom element in `frontend/dist/` with no build step. Its visual system (tokens, priority glyphs, states) is documented in [DESIGN.md](DESIGN.md), and the product brief is in [PRODUCT.md](PRODUCT.md).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for repository workflow and support expectations.
 

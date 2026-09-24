@@ -42,29 +42,28 @@ After every HACS update, restart Home Assistant. If the panel was already open i
 
 Manual installation is useful for local testing. HACS is preferred for normal use and upgrades.
 
-## Optional Media Player Sound Files
+## Optional Media Player Sound
 
-For media-player alarm sound, place MP3 files here:
+No audio files are shipped with the integration. To sound an alarm on media players:
 
-```text
-/config/www/industrial_alarm_panel/sounds/
-```
+1. Put your own MP3 files in `/config/www/` (served as `/local/`), one per priority, for example:
 
-Recommended filenames:
+   ```text
+   /config/www/alarms/critical.mp3
+   /config/www/alarms/high.mp3
+   /config/www/alarms/medium.mp3
+   /config/www/alarms/low.mp3
+   /config/www/alarms/info.mp3
+   ```
 
-```text
-critical.mp3
-high.mp3
-medium.mp3
-low.mp3
-info.mp3
-```
+2. Open **Settings > Devices & services > Industrial Alarm Panel > Configure** and set **Media sound URL** to `/local/alarms/[priority].mp3`. `[priority]` is replaced by the alarm priority.
+3. Choose the media players under **Selected media players** and set **Sound mode** to include media players.
 
-Browser sound works without these files after the operator clicks **Enable Alarm Sound** in the alarm panel.
+Browser sound needs no files. Press **ENABLE SOUND** in the panel's horn block once on each screen that should sound.
 
 ## Create A Test Rule
 
-Use **Developer Tools > Services**:
+Use the panel (**RULES > + NEW RULE**) or **Developer Tools > Actions** (an administrator account is required):
 
 ```yaml
 service: industrial_alarm_panel.create_rule
