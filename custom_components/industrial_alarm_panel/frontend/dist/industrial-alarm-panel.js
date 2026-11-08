@@ -727,6 +727,10 @@ class IndustrialAlarmPanel extends HTMLElement {
       this._statusOpen = false;
     }
     const stack = this.shadowRoot.getElementById("stack");
+    // On narrow screens the status page may be unfolded inside the stack (see
+    // _placeStatus); take it out first, or rewriting the rows destroys it with them.
+    const status = this.shadowRoot.getElementById("status");
+    if (stack.contains(status)) this.shadowRoot.querySelector("#view-alarms .split").appendChild(status);
     const densityChip = this.shadowRoot.getElementById("density-chip");
     densityChip.setAttribute("aria-pressed", String(this._density === "compact"));
     if (!list.length) {

@@ -199,7 +199,7 @@ class StaticHomeAssistantCompatibilityTests(unittest.TestCase):
         pyproject_source = Path("pyproject.toml").read_text()
         readme_source = Path("README.md").read_text()
 
-        expected_version = "1.1.0"
+        expected_version = "1.1.1"
         const_version_match = re.search(r'^VERSION = "([^"]+)"$', const_source, re.MULTILINE)
 
         self.assertIsNotNone(const_version_match)

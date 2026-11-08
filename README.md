@@ -29,6 +29,12 @@ It creates Home Assistant entities, exposes services and a websocket API, persis
 
 <br clear="right">
 
+## What's New in v1.1.1
+
+- Fixed the phone layout showing "Could not reach the alarm engine: null is not an object (evaluating 'status.previousElementSibling')" after tapping an alarm. The alarm engine was fine: the panel's next refresh removed the unfolded status page, so every later refresh failed until the page was reloaded.
+
+After upgrading, restart Home Assistant. The panel loads the new version on its own.
+
 ## What's New in v1.1.0
 
 A redesigned panel and a hardened alarm engine. After upgrading, restart Home Assistant and hard refresh the browser (`Ctrl+Shift+R`).
